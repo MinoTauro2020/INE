@@ -1,0 +1,104 @@
+1) CERTIFICATION PROCESS
+2) EXAM LAB CONFIGURATION
+3) UPLOAD THE REPORT
+                             eCTHPv2 PRE-EXAM MANUAL
+
+  I. CERTIFICATION PROCESS
+
+     STEP 1: OBTAIN A VOUCHER
+
+      Whether you are attempting the eCTHPv2 certification
+      exam on your own, or after having attended one of our
+      approved training courses, you will need to obtain a
+      voucher before you can start your certification process.
+      Once you obtain the voucher, you will receive login
+      credentials to our Certification Area where you can manage the exam, VPN
+      credentials, and anything related to the certification process—from the
+      beginning through the electronic delivery of your certificate.
+
+     STEP 2: BEGIN THE CERTIFICATION PROCESS
+
+      Regular vouchers expire after 180 days from purchase.
+      Infinity vouchers do not expire.
+      Before the voucher expires, you will have to begin the certification process by
+      clicking on the "Begin certification process" button inside the Exams tab of the
+      member’s area.
+
+      The expiration date will always be visible in your certification area and
+      reminder emails are sent to make sure you take advantage of the voucher.
+
+© 2020 Caendra Inc. | eCTHPv2 Pre-Exam Manual
+                             eCTHPv2 PRE-EXAM MANUAL
+
+     STEP 3: PERFORM YOU TESTS
+
+      As soon as you click on the "Begin certification process" button, you will find
+      the instructions regarding the scope of engagement.
+      Specifically, you will come across a letter of engagement that will contain
+      exactly what you should examine and how.
+      At this point, you will start your threat hunting activities utilizing the provided
+      data; take note of your findings and start creating your report.
+      The dedicated exam network will be available to you 24/7 for 2 days.
+      At any time, you will be the only one on the network. You will be able to reset
+      the scenario, should you damage it during your examinations.
+      You can also pause the lab and resume from where you left off by simply
+      clicking the Start/Stop buttons in the Certification area, as you would with any
+      other Hera Lab scenario.
+
+     STEP 4: UPLOAD YOUR REPORT
+
+      Once you have performed a comprehensive threat hunt, it's
+      time to finalize documenting the threat identification steps.
+      Familiarity with reporting activities is assumed, so no
+      commercial-grade report will be required during the
+      eCTHPv2 examination process. You will be required to
+      thoroughly document how you identified each threat
+      though, to prove your findings. For exact guidelines on how
+      to construct your report, refer to sections 3 and 4 of the Letter of Engagement.
+      Once completed, you will upload your report in PDF format for review. This
+      must be done no later than 4 days from the beginning of the certification
+      process (Step 2).
+
+© 2020 Caendra Inc. | eCTHPv2 Pre-Exam Manual
+                             eCTHPv2 PRE-EXAM MANUAL
+
+     STEP 5: OBTAIN RESULTS
+
+                                            One of our instructors will carefully review your
+                                            report. If your findings, and your threat hunting
+                                            skills are deemed sufficient to pass the exam, you
+                                            will be granted the eCTHPv2 certification.
+                                            Should you fail the first attempt, the instructor will
+                                            provide you with valuable feedback. Armed with
+                                            this information, you will have a free retake which
+      you can use to perform your tests and upload a new report.
+      The retake will commence the moment you view the instructor’s feedback, or
+      automatically 14 days after it is received.
+      As with your first attempt, you will be given another 2 days in which the exam
+      lab network will be re-opened for further examinations.
+      Similarly, a new report should be created and uploaded. Make sure you
+      regularly consult with the timers in the Member’s area regarding the report-
+      uploading deadline.
+      Once you pass the exam, you will find your digital certificate immediately
+      verified and downloadable.
+
+© 2020 Caendra Inc. | eCTHPv2 Pre-Exam Manual
+                             eCTHPv2 PRE-EXAM MANUAL
+
+© 2020 Caendra Inc. | eCTHPv2 Pre-Exam Manual
+                             eCTHPv2 PRE-EXAM MANUAL
+ II. EXAM LAB CONFIGURATION
+
+      The configuration of the exam lab is the same as the Hera for THP laboratories.
+      If you don’t know how to configure properly the environment please refer to
+      the document:
+
+                                    Hera Manual
+
+III. UPLOAD THE REPORT
+
+      Once your Threat Hunt is complete, you can upload the report (pdf format) to
+      the following box.
+
+© 2020 Caendra Inc. | eCTHPv2 Pre-Exam Manual
+

